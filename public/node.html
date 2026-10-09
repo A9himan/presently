@@ -5,7 +5,7 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Presently : Attendance Camera Node</title>
   <link rel="stylesheet" href="/css/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📹</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%232563eb'/><text x='50' y='68' font-size='56' font-family='system-ui, sans-serif' font-weight='700' fill='white' text-anchor='middle'>P</text></svg>">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     html, body { width: 100%; height: 100%; overflow: hidden; background: #070a11; font-family: system-ui, -apple-system, sans-serif; }
@@ -156,7 +156,7 @@
           <label class="form-label">Password</label>
           <input id="node-login-pass" type="password" class="form-input" required autocomplete="current-password" placeholder="Enter password">
         </div>
-        <button type="submit" class="btn-login">🔓 Sign In</button>
+        <button type="submit" class="btn-login">Sign In</button>
       </form>
     </div>
   </div>
@@ -166,7 +166,7 @@
   <!-- ═══════════════════════════════════════════ -->
   <div id="node-setup-screen">
     <div class="setup-card">
-      <h2>📹 Camera Node Setup</h2>
+      <h2>Camera Node Setup</h2>
       <p>Choose the class this camera will capture attendance for</p>
 
       <div class="setup-user-info">
@@ -181,7 +181,7 @@
         </select>
       </div>
 
-      <button id="setup-start-btn" class="btn-start">▶ Start Attendance Camera</button>
+      <button id="setup-start-btn" class="btn-start">Start Attendance Camera</button>
     </div>
   </div>
 
@@ -201,12 +201,12 @@
   </div>
 
   <!-- Logout button (top-right) -->
-  <button id="node-logout-btn">⏻ Logout</button>
+  <button id="node-logout-btn">Logout</button>
 
   <!-- Challenge overlay (top center) -->
   <div id="node-challenge-overlay">
     <div class="challenge-card">
-      <div class="ch-title">🛡️ Anti-Proxy Liveness Check</div>
+      <div class="ch-title">Identity Verification Check</div>
       <div class="ch-action" id="node-ch-action">—</div>
       <div class="ch-bar-wrap"><div class="ch-bar-fill" id="node-ch-bar"></div></div>
     </div>

@@ -119,7 +119,7 @@ async function toggleCameraMode(mode) {
   }
 }
 
-// Mark Attendance: Capture frame and submit for verification
+// Mark Attendance: Capture frame burst and submit for server verification
 async function markAttendance() {
   if (!activeSessionId) {
     await refreshActiveSession();
@@ -132,28 +132,32 @@ async function markAttendance() {
   reticleEl.className = 'target-reticle warning';
   kioskResultContainer.innerHTML = '';
 
-  // Capture snapshot
-  let snapshot = null;
+  const frames = [];
   if (cameraMode === 'webcam') {
     const tempCanvas = document.createElement('canvas');
-    tempCanvas.width = 320;
-    tempCanvas.height = 240;
+    tempCanvas.width = 640;
+    tempCanvas.height = 480;
     const tCtx = tempCanvas.getContext('2d');
-    tCtx.drawImage(videoEl, 0, 0, 320, 240);
-    snapshot = tempCanvas.toDataURL('image/jpeg', 0.7);
+    for (let i = 0; i < 3; i++) {
+      tCtx.drawImage(videoEl, 0, 0, 640, 480);
+      frames.push(tempCanvas.toDataURL('image/jpeg', 0.85));
+      if (i < 2) await new Promise(r => setTimeout(r, 80));
+    }
   } else {
-    snapshot = canvasEl.toDataURL('image/jpeg', 0.7);
+    frames.push(canvasEl.toDataURL('image/jpeg', 0.85));
   }
 
   const payload = {
     sessionId: activeSessionId,
     cameraId: cameraDeviceSelectorEl.value || 'CAM-ROOM-101',
-    challengeId: null,
-    actionCompleted: 'MARK',
-    telemetry: { yawAngleDelta: 0, blinkCount: 0, isStaticImageDetected: false },
-    snapshotBase64: snapshot,
-    forceStudentId: selectedStudentForDemo?.id || null
+    frames: frames,
+    snapshotBase64: frames[0]
   };
+
+  // Only pass demo student hint if running in virtual simulation mode
+  if (cameraMode === 'virtual' && selectedStudentForDemo?.id) {
+    payload.forceStudentId = selectedStudentForDemo.id;
+  }
 
   try {
     const res = await fetch('/api/attendance/verify-and-mark', {
@@ -175,16 +179,17 @@ async function markAttendance() {
 
 // Handle Server Verification Response
 function handleVerificationResponse(result) {
-  if (result.code === 'MARKED_SUCCESSFULLY') {
+  if (result.code === 'MARKED_SUCCESSFULLY' || (result.success && result.record)) {
     reticleEl.className = 'target-reticle active';
     window.presentlyFaceEngine.playSuccessChime();
 
+    const rec = result.record;
     showResultToast({
       status: 'success',
-      title: `✅ Marked Present: ${result.record.studentName}`,
-      message: `Subject: ${result.record.subjectName || 'Data Structures'} (${result.record.subjectCode || 'DS'}) • Faculty: ${result.record.teacherName || 'Faculty In-Charge'}`,
-      meta: `Roll No: ${result.record.rollNumber} • Match: ${Math.round(result.record.matchConfidence * 100)}% • Snapshot Auto-Deletes in 72h`,
-      avatarColor: result.record.avatarColor
+      title: `Marked Present: ${rec.studentName || rec.student_name}`,
+      message: `Subject: ${rec.subjectName || rec.subject_name || 'Class Session'} • Faculty: ${rec.teacherName || rec.teacher_name || 'Faculty In-Charge'}`,
+      meta: `Roll No: ${rec.rollNumber || rec.roll_number} • Match: ${Math.round((rec.matchConfidence || rec.match_confidence || 0.95) * 100)}% • Snapshot Auto-Deletes in 72h`,
+      avatarColor: rec.avatarColor
     });
   } else if (result.code === 'ALREADY_MARKED') {
     reticleEl.className = 'target-reticle warning';
@@ -192,9 +197,19 @@ function handleVerificationResponse(result) {
 
     showResultToast({
       status: 'warning',
-      title: `⚠️ Already Marked: ${result.student?.name}`,
-      message: `Student was already marked for this session at ${new Date(result.record?.marked_at).toLocaleTimeString()}.`,
+      title: `Already Marked: ${result.student?.name || result.record?.student_name || 'Student'}`,
+      message: `Student was already marked for this session at ${new Date(result.record?.marked_at || Date.now()).toLocaleTimeString()}.`,
       meta: 'Strict Deduplication: Exactly one attendance mark permitted per student per session.'
+    });
+  } else if (result.decision === 'REVIEW') {
+    reticleEl.className = 'target-reticle warning';
+    window.presentlyFaceEngine.playWarningBeep();
+
+    showResultToast({
+      status: 'warning',
+      title: 'Pending Faculty Review',
+      message: 'Borderline biometric confidence score. Dispatched to faculty audit queue.',
+      meta: result.reason || 'LOW_MARGIN_REVIEW'
     });
   } else {
     reticleEl.className = 'target-reticle danger';
@@ -203,8 +218,8 @@ function handleVerificationResponse(result) {
     showResultToast({
       status: 'danger',
       title: 'Verification Rejected',
-      message: result.message || 'Verification failed.',
-      meta: result.code || 'UNKNOWN_REASON'
+      message: result.message || result.reason || 'Biometric match score below acceptance threshold.',
+      meta: result.code || result.reason || 'VERIFICATION_FAILED'
     });
   }
 }

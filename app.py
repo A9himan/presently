@@ -19,11 +19,12 @@ try:
 except ImportError:
     cv2 = np = None
 
-try:
-    from deepface import DeepFace
-    DEEPFACE_AVAILABLE = True
-except ImportError:
-    DEEPFACE_AVAILABLE = False
+import logging
+
+logger = logging.getLogger('presently')
+
+from face_service import get_service, decode_image, valid_embedding
+from face_engine_server import FaceEngine
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -83,10 +84,18 @@ login_manager = LoginManager()
 login_manager.init_app(app)
 
 PORT = int(os.environ.get('PORT', 3000))
+DEMO_MODE = os.environ.get('DEMO_MODE', '0') in ('1', 'true', 'True')
 
-# ==========================================
-# Database Models (Explicit Table Names)
-# ==========================================
+@app.route('/api/config', methods=['GET'])
+def api_config():
+    global DEMO_MODE
+    demo = DEMO_MODE or (os.environ.get('DEMO_MODE', '0') in ('1', 'true', 'True'))
+    return jsonify({
+        'demoMode': bool(demo),
+        'embeddingDimension': 512,
+        'model': 'buffalo_s',
+        'retentionHours': 72
+    })
 class Teacher(db.Model):
     __tablename__ = 'teachers'
     id = db.Column(db.String, primary_key=True)
@@ -145,8 +154,10 @@ class Student(db.Model):
     email = db.Column(db.String, unique=True, nullable=False)
     department = db.Column(db.String, nullable=False)
     avatar_color = db.Column(db.String, default='#3b82f6', nullable=False)
-    face_embedding = db.Column(db.Text, nullable=False) # JSON 128-d float array
-    photo_data = db.Column(db.Text, nullable=True) # Uploaded face photo data URL
+    face_embedding = db.Column(db.Text, nullable=False) # JSON 512-d float array (fused)
+    face_embeddings = db.Column(db.Text, nullable=True) # JSON list of 512-d float arrays (per enrollment frame)
+    photo_thumbnail = db.Column(db.Text, nullable=True) # Privacy thumbnail base64
+    photo_data = db.Column(db.Text, nullable=True) # Deprecated: raw photo data
     is_enrolled_face = db.Column(db.Integer, default=1, nullable=False)
     created_at = db.Column(db.String, nullable=False)
 
@@ -264,17 +275,6 @@ def now_iso():
 def gen_id(prefix):
     return f"{prefix}_{secrets.token_hex(6)}"
 
-def generate_seeded_embedding(seed_str):
-    h = hashlib.sha256(seed_str.encode('utf-8')).digest()
-    vector = []
-    sum_sq = 0.0
-    for i in range(128):
-        byte_val = h[i % 32]
-        val = math.sin((byte_val * 13 + i * 37) / 100.0)
-        vector.append(val)
-        sum_sq += val * val
-    norm = math.sqrt(sum_sq) or 1.0
-    return [round(v / norm, 6) for v in vector]
 
 def cosine_similarity(vec_a, vec_b):
     if not vec_a or not vec_b or len(vec_a) != len(vec_b):
@@ -601,6 +601,10 @@ def ensure_schema_migrations():
             stu_cols = [c['name'] for c in inspector.get_columns('students')]
             if 'photo_data' not in stu_cols:
                 db.session.execute(db.text("ALTER TABLE students ADD COLUMN photo_data TEXT"))
+            if 'face_embeddings' not in stu_cols:
+                db.session.execute(db.text("ALTER TABLE students ADD COLUMN face_embeddings TEXT"))
+            if 'photo_thumbnail' not in stu_cols:
+                db.session.execute(db.text("ALTER TABLE students ADD COLUMN photo_thumbnail TEXT"))
             db.session.commit()
 
         # subjects table migrations
@@ -799,7 +803,10 @@ def seed_database(force=False):
         ('stu_12', 'CS-2024-012', 'Leila Benali', 'leila.b@campus.edu', 'Computer Science', '#f97316'),
     ]
     for sid, roll, sname, semail, sdept, scolor in initial_students:
-        emb = generate_seeded_embedding(f"{roll}_{sname}")
+        h = hashlib.sha256(f"{roll}_{sname}".encode('utf-8')).digest()
+        np.random.seed(int.from_bytes(h[:4], 'big'))
+        vec = np.random.randn(512).astype(np.float32)
+        emb = (vec / (np.linalg.norm(vec) or 1.0)).tolist()
         stu = Student(
             id=sid,
             roll_number=roll,
@@ -808,6 +815,9 @@ def seed_database(force=False):
             department=sdept,
             avatar_color=scolor,
             face_embedding=json.dumps(emb),
+            face_embeddings=json.dumps([emb]),
+            photo_thumbnail=None,
+            photo_data=None,
             is_enrolled_face=1,
             created_at=now
         )
@@ -1106,36 +1116,73 @@ def api_verify_and_mark():
     
     enrolled_students = Student.query.filter(Student.id.in_(enrolled_student_ids)).all()
     
-    # 4. Face Recognition Matching
-    matched_student = None
-    confidence = 0.96
-    
-    if force_student_id:
-        matched_student = next((s for s in enrolled_students if s.id == force_student_id), None)
-    elif embedding and isinstance(embedding, list):
-        best_sim = -1.0
-        best_stu = None
-        for s in enrolled_students:
-            try:
-                s_emb = json.loads(s.face_embedding)
-                sim = cosine_similarity(embedding, s_emb)
-                if sim > best_sim:
-                    best_sim = sim
-                    best_stu = s
-            except Exception:
-                continue
-        if best_sim >= 0.72 and best_stu:
-            matched_student = best_stu
-            confidence = round(best_sim, 2)
-            
-    if not matched_student:
+    # 4. Face Recognition Matching via Server-Side FaceService
+    svc = get_service()
+    raw_frames = body.get("frames", [])
+    if isinstance(raw_frames, list) and raw_frames:
+        frames = raw_frames[:15]
+    elif snapshot_base64:
+        frames = [snapshot_base64]
+    elif body.get("photoData"):
+        frames = [body.get("photoData")]
+    else:
+        frames = []
+
+    if not frames:
         return jsonify({
             'success': False,
-            'code': 'UNKNOWN_FACE',
-            'message': 'Face not recognized among enrolled students for this class',
-            'confidence': confidence,
-            'threshold': 0.72
-        }), 404
+            'decision': 'REJECT',
+            'reason': 'NO_FRAMES_PROVIDED',
+            'message': 'No camera frames received for facial verification'
+        }), 400
+
+    gallery = {}
+    for s in enrolled_students:
+        if getattr(s, 'face_embeddings', None):
+            try:
+                gallery[s.id] = json.loads(s.face_embeddings)
+            except Exception:
+                pass
+        if s.id not in gallery and getattr(s, 'face_embedding', None):
+            try:
+                gallery[s.id] = [json.loads(s.face_embedding)]
+            except Exception:
+                pass
+
+    m = svc.identify(frames, gallery)
+
+    demo_mode = os.environ.get("DEMO_MODE", "0") in ("1", "true", "True")
+    if m.decision != "ACCEPT":
+        if demo_mode and body.get("forceStudentId"):
+            demo_stu = next((s for s in enrolled_students if s.id == body.get("forceStudentId")), None)
+            if demo_stu:
+                matched_student = demo_stu
+                confidence = 0.95
+            else:
+                status = 202 if m.decision == "REVIEW" else 400
+                return jsonify({
+                    "success": False,
+                    "decision": m.decision,
+                    "reason": m.reason,
+                    "details": m.to_dict()
+                }), status
+        else:
+            status = 202 if m.decision == "REVIEW" else 400
+            return jsonify({
+                "success": False,
+                "decision": m.decision,
+                "reason": m.reason,
+                "details": m.to_dict()
+            }), status
+    else:
+        matched_student = next((s for s in enrolled_students if s.id == m.student_id), None)
+        if not matched_student:
+            return jsonify({
+                "success": False,
+                "decision": "REJECT",
+                "reason": "STUDENT_NOT_IN_ROSTER"
+            }), 404
+        confidence = round(m.score, 4)
         
     # 5. Strict Idempotency: One mark per student per session!
     existing = AttendanceRecord.query.filter_by(session_id=session_id, student_id=matched_student.id).first()
@@ -1513,6 +1560,7 @@ def api_get_students():
         })
     return jsonify(res), 200
 
+@app.route('/api/students', methods=['POST'])
 @app.route('/api/students/enroll', methods=['POST'])
 def api_enroll_student():
     body = request.get_json(force=True) or {}
@@ -1520,24 +1568,83 @@ def api_enroll_student():
     name = body.get('name', '').strip()
     email = body.get('email', '').strip()
     department = body.get('department', 'Computer Science').strip()
-    custom_embedding = body.get('customEmbedding')
-    photo_data = body.get('photoData') or body.get('photo_data')
     
     if not roll_number or not name or not email:
         return jsonify({'error': 'Roll number, name, and email are required'}), 400
-        
+
+    global DEMO_MODE
+    demo_active = DEMO_MODE or (os.environ.get('DEMO_MODE', '0') in ('1', 'true', 'True'))
+
+    raw_frames = body.get("frames", [])
+    if isinstance(raw_frames, list) and raw_frames:
+        frames = raw_frames
+    elif body.get("photoData"):
+        frames = [body.get("photoData")]
+    elif body.get("photo_data"):
+        frames = [body.get("photo_data")]
+    else:
+        frames = []
+
+    if not frames:
+        if demo_active:
+            # Deterministic synthetic 512-d unit vector for demo/test mode
+            h = hashlib.sha256(f"{roll_number}_{name}".encode('utf-8')).digest()
+            np.random.seed(int.from_bytes(h[:4], 'big'))
+            vec = np.random.randn(512).astype(np.float32)
+            embedding = (vec / (np.linalg.norm(vec) or 1.0)).tolist()
+            embeddings = [embedding]
+            thumbnail = ""
+        else:
+            return jsonify({'error': 'Face photo is required for enrollment'}), 400
+    else:
+        frame_img = decode_image(frames[0])
+        if frame_img is None:
+            return jsonify({'error': 'Invalid or corrupt face image data'}), 400
+
+        svc = get_service()
+        enroll_frames = [frames[0], frames[0], frames[0]] if len(frames) == 1 else frames
+        result = svc.enroll(enroll_frames)
+        if not result.ok:
+            err_msg = ', '.join(result.errors)
+            if any('NO_FACE' in e or 'ONLY_0' in e for e in result.errors):
+                err_msg = 'No face detected in the provided image'
+            return jsonify({
+                'error': f'Enrollment rejected: {err_msg}',
+                'details': result.frames
+            }), 400
+
+        # Duplicate check against existing gallery
+        all_students = Student.query.all()
+        global_gallery = {}
+        for s in all_students:
+            if getattr(s, 'face_embeddings', None):
+                try:
+                    global_gallery[s.id] = json.loads(s.face_embeddings)
+                except Exception:
+                    pass
+            if s.id not in global_gallery and getattr(s, 'face_embedding', None):
+                try:
+                    global_gallery[s.id] = [json.loads(s.face_embedding)]
+                except Exception:
+                    pass
+
+        dup = svc.duplicate_of(result.embedding, global_gallery)
+        if dup:
+            dup_student = next((s for s in all_students if s.id == dup[0]), None)
+            dup_name = dup_student.name if dup_student else dup[0]
+            return jsonify({
+                'error': f'Duplicate face detected: already enrolled as {dup_name} (similarity: {round(dup[1], 2)})'
+            }), 400
+
+        embedding = result.embedding
+        embeddings = result.embeddings
+        thumbnail = FaceEngine.generate_thumbnail(frame_img, size=48) if frame_img is not None else ""
+
     stu_id = 'stu_' + secrets.token_hex(4)
     now = now_iso()
     colors_list = ['#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#f59e0b', '#06b6d4', '#ef4444']
     avatar_color = secrets.choice(colors_list)
-    
-    if custom_embedding and isinstance(custom_embedding, list):
-        embedding = custom_embedding
-    elif photo_data:
-        embedding = generate_seeded_embedding(f"{roll_number}_{photo_data[:120]}")
-    else:
-        embedding = generate_seeded_embedding(f"{roll_number}_{name}_{int(time.time())}")
-        
+
     stu = Student(
         id=stu_id,
         roll_number=roll_number,
@@ -1546,7 +1653,9 @@ def api_enroll_student():
         department=department,
         avatar_color=avatar_color,
         face_embedding=json.dumps(embedding),
-        photo_data=photo_data,
+        face_embeddings=json.dumps(embeddings),
+        photo_thumbnail=thumbnail,
+        photo_data=None, # Raw photo discarded
         is_enrolled_face=1,
         created_at=now
     )
@@ -1559,6 +1668,7 @@ def api_enroll_student():
         
     try:
         db.session.commit()
+        thumb_uri = f"data:image/jpeg;base64,{thumbnail}" if thumbnail else None
         return jsonify({
             'success': True,
             'student': {
@@ -1568,9 +1678,10 @@ def api_enroll_student():
                 'email': email,
                 'department': department,
                 'avatar_color': avatar_color,
-                'photo_data': photo_data,
+                'photo_thumbnail': thumbnail,
+                'photo_data': thumb_uri,
                 'embedding_hash': hash_embedding(embedding),
-                'privacy_guarantee': '128-d Biometric vector extracted for attendance recognition'
+                'privacy_guarantee': '512-d ArcFace vector extracted; raw photo discarded.'
             }
         }), 201
     except Exception as e:

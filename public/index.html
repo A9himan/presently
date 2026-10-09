@@ -3,9 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Presently : Attendance That Takes Itself</title>
+  <title>Presently — Automated Attendance &amp; Verification</title>
   <link rel="stylesheet" href="/css/style.css">
-  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><rect width='100' height='100' rx='22' fill='%232563eb'/><text x='50' y='68' font-size='56' font-family='system-ui, sans-serif' font-weight='700' fill='white' text-anchor='middle'>P</text></svg>">
 </head>
 <body>
 
@@ -16,35 +16,35 @@
         <div class="logo-badge">P</div>
         <div class="logo-text">
           <h1>Presently</h1>
-          <p>Attendance That Takes Itself</p>
+          <p>Automated Attendance &amp; Verification</p>
         </div>
       </div>
 
       <nav class="nav-tabs">
         <button class="tab-btn active" data-tab="kiosk">
-          <span>📹</span> Camera Terminal
+          Camera Terminal
         </button>
         <button class="tab-btn" data-tab="faculty">
-          <span>👨‍🏫</span> Faculty Live Monitor
+          Faculty Live Monitor
         </button>
         <button class="tab-btn" data-tab="snapshots">
-          <span>🛡️</span> 72h Snapshot Vault
+          Snapshot Vault
         </button>
         <button class="tab-btn" data-tab="admin">
-          <span>🏫</span> Admin Portal
+          Administration
         </button>
         <button class="tab-btn" data-tab="cameras">
-          <span>📡</span> Camera Hub
+          Camera Hub
         </button>
         <button class="tab-btn" data-tab="lms">
-          <span>⚡</span> LMS Webhook & API
+          LMS &amp; API
         </button>
       </nav>
 
       <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
         <!-- Prominent Edge Node launcher for Judges -->
         <a href="/node" target="_blank" class="btn btn-outline btn-sm" style="border-color: #10b981; color: #6ee7b7; font-weight: 700; background: rgba(16, 185, 129, 0.1);">
-          <span>📹</span> Launch Camera Node ↗
+          Launch Camera Node ↗
         </a>
 
         <!-- Authenticated User Profile -->
@@ -96,7 +96,7 @@
               <div id="target-reticle" class="target-reticle"></div>
 
               <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: #94a3b8; background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 6px;">
-                <span>Autonomous Facial Recognition</span>
+                <span>Facial Recognition Active</span>
                 <span id="kiosk-feed-status">Camera Feed: Live</span>
               </div>
             </div>
@@ -112,7 +112,7 @@
           <div class="card">
             <div class="card-header">
               <div class="card-title">
-                <span>📷</span> Camera Settings & Device
+                Camera Settings &amp; Device
               </div>
               <div style="display: flex; gap: 0.35rem;">
                 <button id="btn-mode-virtual" class="btn btn-outline btn-sm active">Simulation</button>
@@ -134,16 +134,16 @@
             </div>
 
             <button id="btn-mark-attendance" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem; height: 44px; font-weight: 700; font-size: 0.95rem;">
-              <span>📸</span> Mark Attendance
+              Capture &amp; Verify Attendance
             </button>
           </div>
 
           <!-- Feature Specs Card -->
           <div class="card" style="background: rgba(17, 24, 39, 0.6);">
             <div style="font-size: 0.8rem; display: flex; flex-direction: column; gap: 0.4rem;">
-              <div>✅ <strong>One Mark Per Session:</strong> Strict deduplication prevents double-marking.</div>
-              <div>⚡ <strong>Instant LMS Push:</strong> Attendance pushed to LMS within 20ms via webhook.</div>
-              <div>🔒 <strong>72h Auto-Deletion:</strong> Snapshots automatically purge after 72 hours.</div>
+              <div><strong style="color: var(--text-main);">One Mark Per Session:</strong> Strict deduplication prevents double-marking.</div>
+              <div><strong style="color: var(--text-main);">Instant LMS Push:</strong> Attendance pushed via HMAC-signed webhook.</div>
+              <div><strong style="color: var(--text-main);">72h Auto-Deletion:</strong> Verification audit snapshots auto-purge after 72 hours.</div>
             </div>
           </div>
 
@@ -174,10 +174,10 @@
           <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
             <div style="background: rgba(139, 92, 246, 0.12); border: 1px solid rgba(139, 92, 246, 0.35); border-radius: 8px; padding: 0.4rem 0.8rem; display: flex; align-items: center; gap: 0.5rem;">
               <span class="status-dot" style="background: #a78bfa;"></span>
-              <span style="font-size: 0.8rem; font-weight: 700; color: #c4b5fd;">Timetable Orchestrated</span>
+              <span style="font-size: 0.8rem; font-weight: 700; color: #c4b5fd;">Active Timetable Slot</span>
             </div>
             <button id="faculty-btn-pdf" class="btn btn-primary" style="display: inline-flex;">
-              <span>📄</span> Export Official PDF Dossier
+              Export PDF Dossier
             </button>
           </div>
         </div>
@@ -187,22 +187,22 @@
           <div class="stat-kpi">
             <span class="stat-label">Total Enrolled</span>
             <span id="kpi-faculty-enrolled" class="stat-value">12</span>
-            <span class="stat-meta">Class Roster Quorum</span>
+            <span class="stat-meta">Enrolled Students</span>
           </div>
           <div class="stat-kpi green">
             <span class="stat-label">Present (Verified)</span>
             <span id="kpi-faculty-present" class="stat-value">2</span>
-            <span class="stat-meta">Passed Anti-Proxy Challenge</span>
+            <span class="stat-meta">Biometrically Verified</span>
           </div>
           <div class="stat-kpi amber">
             <span class="stat-label">Absent Students</span>
             <span id="kpi-faculty-absent" class="stat-value">10</span>
-            <span class="stat-meta">Pending Arrival</span>
+            <span class="stat-meta">Unmarked</span>
           </div>
           <div class="stat-kpi purple">
             <span class="stat-label">Attendance Rate</span>
             <span id="kpi-faculty-rate" class="stat-value">16.7%</span>
-            <span class="stat-meta">Real-Time Ratio</span>
+            <span class="stat-meta">Session Progress</span>
           </div>
         </div>
 
@@ -211,9 +211,9 @@
           <div class="card-header">
             <div>
               <div class="card-title">
-                <span>📋</span> Live Attendance Ledger
+                Live Attendance Ledger
               </div>
-              <div class="card-subtitle">Streams in real time via Server-Sent Events as students pass camera</div>
+              <div class="card-subtitle">Real-time verification log for the current lecture session</div>
             </div>
 
             <div style="display: flex; gap: 0.75rem; align-items: center;">
@@ -235,7 +235,7 @@
                   <th>Student Name</th>
                   <th>Status</th>
                   <th>Marked Time</th>
-                  <th>Anti-Proxy Action</th>
+                  <th>Verification Mode</th>
                   <th>Confidence</th>
                 </tr>
               </thead>
@@ -258,19 +258,19 @@
           <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
             <div>
               <h3 style="font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
-                <span>🛡️</span> Privacy-First Snapshot Retention Lifecycle
+                Privacy-Preserving Snapshot Retention
               </h3>
               <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem; max-width: 800px;">
-                Only 128-dimensional mathematical face embeddings are stored long-term in the database. Raw photos are discarded immediately after enrollment. Verification audit snapshots are strictly preserved for 72 hours for faculty dispute review, and then automatically wiped.
+                Only 512-dimensional mathematical ArcFace embeddings are stored long-term in the database. Raw photos are discarded immediately after enrollment. Verification audit snapshots are strictly preserved for 72 hours for faculty dispute review, and then automatically purged.
               </p>
             </div>
 
             <div style="display: flex; gap: 0.75rem; align-items: center;">
               <button id="btn-manual-purge" class="btn btn-outline btn-sm">
-                <span>🧹</span> Purge Expired Now
+                Purge Expired Now
               </button>
               <button id="btn-timewarp" class="btn btn-primary btn-sm">
-                <span>⏩</span> Simulate +72h Time Warp & Purge
+                Simulate +72h Purge
               </button>
             </div>
           </div>
@@ -281,9 +281,9 @@
           <div class="card-header">
             <div>
               <div class="card-title">
-                <span>📸</span> Verification Snapshot Audit Gallery
+                Audit Snapshot Gallery
               </div>
-              <div class="card-subtitle">Live countdown to 72-hour automated deletion policy</div>
+              <div class="card-subtitle">Verification snapshots subject to 72-hour automated deletion policy</div>
             </div>
           </div>
 
@@ -333,7 +333,7 @@
           <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
             <div>
               <div class="card-title">
-                <span>👨‍🏫</span> Faculty Members & Teachers
+                Faculty Members &amp; Instructors
               </div>
               <div class="card-subtitle">
                 Manage teaching staff, auto-generated sequential login IDs (<code style="color: #a5b4fc;">F1, F2, F3...</code>), and credentials.
@@ -369,7 +369,7 @@
           <div class="card">
             <div class="card-header">
               <div class="card-title">
-                <span>📚</span> Academic Subjects
+                Academic Subjects
               </div>
               <button id="btn-open-add-subject" class="btn btn-primary btn-sm">
                 <span>+</span> Add Subject
@@ -396,7 +396,7 @@
           <div class="card">
             <div class="card-header">
               <div class="card-title">
-                <span>🏛️</span> Classes Under Subjects
+                Classes &amp; Sections
               </div>
               <button id="btn-open-add-class" class="btn btn-primary btn-sm">
                 <span>+</span> Add Class
@@ -427,7 +427,7 @@
           <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
             <div>
               <div class="card-title">
-                <span>📅</span> Weekly Institutional Timetable (Admin Orchestrated)
+                Weekly Institutional Timetable
               </div>
               <div class="card-subtitle">
                 Each class has specific subjects scheduled by day & time. Attendance in camera automatically tracks the scheduled subject and assigned teacher.
@@ -472,13 +472,13 @@
           <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
             <div>
               <div class="card-title">
-                <span>🎓</span> Student Face Enrollment Studio
+                Student Biometric Directory
               </div>
-              <div class="card-subtitle">Privacy Guarantee: Only 128-d vectors stored; raw photos purged immediately</div>
+              <div class="card-subtitle">Privacy Guarantee: Only 512-d ArcFace vectors stored; raw photos purged immediately</div>
             </div>
             <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
               <button id="btn-remove-all-students" class="btn btn-danger btn-sm">
-                <span>🗑️</span> Remove All Existing Students
+                Remove All Students
               </button>
               <button id="btn-open-add-student" class="btn btn-primary btn-sm">
                 <span>+</span> Enroll New Student
@@ -515,7 +515,7 @@
         
         <div class="card" style="background: linear-gradient(145deg, #111827, #1f293d);">
           <div class="card-title" style="margin-bottom: 0.5rem;">
-            <span>📡</span> Central Hub Multi-Room Camera Architecture
+            Central Hub Multi-Room Camera Architecture
           </div>
           <p style="font-size: 0.85rem; color: var(--text-muted); max-width: 900px;">
             Presently scales across unlimited lecture halls and laboratories. Camera devices connect to this central hub via authenticated edge endpoints. Each terminal stream handles face landmark tracking, anti-proxy liveness challenges, and pushes attendance to the central database.
@@ -538,12 +538,12 @@
           <div class="card-header">
             <div>
               <div class="card-title">
-                <span>⚡</span> LMS Webhook & REST API Integration
+                LMS Webhook &amp; REST API Integration
               </div>
               <div class="card-subtitle">Each attendance mark is pushed instantly to your LMS with HMAC-SHA256 signatures</div>
             </div>
             <button id="btn-lms-test-ping" class="btn btn-primary btn-sm">
-              <span>🚀</span> Send Test Webhook Ping
+              Send Test Webhook
             </button>
           </div>
 
@@ -564,10 +564,10 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">
-              <span>📥</span> Live LMS Webhook Ingestion Feed
+              LMS Webhook Event Log
             </div>
             <button id="btn-refresh-lms-feed" class="btn btn-outline btn-sm">
-              <span>🔄</span> Refresh Feed
+              Refresh Feed
             </button>
           </div>
 
@@ -578,7 +578,7 @@
         <div class="card">
           <div class="card-header">
             <div class="card-title">
-              <span>🔌</span> REST API Documentation & Endpoints
+              REST API Endpoints Specification
             </div>
           </div>
           <div class="table-responsive">
@@ -619,7 +619,7 @@
                 <tr>
                   <td><span class="badge badge-green">POST</span></td>
                   <td><code>/api/students/enroll</code></td>
-                  <td>Privacy face enrollment (extracts 128-d vector, purges photo)</td>
+                  <td>Privacy face enrollment (extracts 512-d vector, purges photo)</td>
                   <td><code>{ roll_number, name, email, department }</code></td>
                 </tr>
               </tbody>
@@ -850,13 +850,13 @@
             <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.5rem; font-weight: 600;">EXTRACTED BIOMETRIC FACE PREVIEW</div>
             <canvas id="stu-photo-canvas" width="130" height="130" style="border-radius: 8px; border: 2px solid #10b981; box-shadow: 0 4px 12px rgba(16,185,129,0.2);"></canvas>
             <div id="stu-photo-status" style="font-size: 0.75rem; color: #34d399; margin-top: 0.4rem; font-weight: 600;">
-              ✅ Face detected • 128-d Vector Extracted
+              Face detected • 512-d Vector Extracted
             </div>
           </div>
         </div>
 
         <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 0.75rem; margin-top: 0.5rem; font-size: 0.75rem; color: #93c5fd;">
-          🔒 <strong>Privacy Guarantee:</strong> A 128-dimensional mathematical vector embedding will be extracted from the uploaded image for attendance matching.
+          <strong>Privacy Guarantee:</strong> A 512-dimensional mathematical ArcFace vector is extracted from the uploaded image. Raw image data is discarded immediately after vector generation.
         </div>
 
         <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
@@ -919,7 +919,7 @@
       <div style="text-align: center; margin-bottom: 1.25rem;">
         <div class="logo-badge" style="margin: 0 auto 0.75rem auto; width: 48px; height: 48px; font-size: 1.5rem;">P</div>
         <h2 style="font-size: 1.35rem; font-weight: 800; color: #ffffff;">Presently Central Hub</h2>
-        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">Autonomous Attendance & Anti-Proxy Biometric Hub</p>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">Automated Attendance &amp; Verification System</p>
       </div>
 
       <div id="login-error-msg" style="display: none; background: rgba(244, 63, 94, 0.15); border: 1px solid var(--accent-rose); color: #fca5a5; padding: 0.6rem; border-radius: 8px; font-size: 0.8rem; margin-bottom: 1rem;"></div>
@@ -930,7 +930,7 @@
           <select id="login-role-select" class="form-select">
             <option value="FACULTY">Faculty Member</option>
             <option value="ADMIN">System Administrator</option>
-            <option value="NODE">📹 Classroom Camera Node</option>
+            <option value="NODE">Classroom Camera Node</option>
           </select>
         </div>
 
@@ -948,21 +948,21 @@
         </div>
 
         <button type="submit" id="btn-login-submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem; height: 42px;">
-          <span>🔓</span> Log In
+          Log In
         </button>
       </form>
 
       <div style="margin-top: 1rem; padding-top: 0.85rem; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.4rem;">
         <div style="display: flex; gap: 0.5rem;">
           <button type="button" id="btn-quick-login-faculty" class="btn btn-outline btn-sm" style="flex: 1; border-color: #6366f1; color: #a5b4fc; font-weight: 700; background: rgba(99, 102, 241, 0.08);">
-            <span>👨‍🏫</span> Faculty (F1)
+            Faculty (F1)
           </button>
           <button type="button" id="btn-quick-login-admin" class="btn btn-outline btn-sm" style="flex: 1; border-color: #3b82f6; color: #93c5fd; font-weight: 700; background: rgba(59, 130, 246, 0.08);">
-            <span>🛡️</span> Admin
+            Admin
           </button>
         </div>
         <button type="button" id="btn-quick-login-camera" class="btn btn-outline btn-sm" style="width: 100%; border-color: #10b981; color: #6ee7b7; font-weight: 700; background: rgba(16, 185, 129, 0.08);">
-          <span>📹</span> Quick Login as Camera Node
+          Quick Login as Camera Node
         </button>
       </div>
     </div>
@@ -972,10 +972,10 @@
   <footer>
     <div class="footer-content">
       <div>
-        <strong>Presently: Attendance That Takes Itself</strong> • Enterprise Anti-Proxy Biometric System
+        <strong>Presently</strong> &bull; Automated Attendance &amp; Verification System
       </div>
       <div>
-        <span>Privacy Certified</span> • <span>72h Snapshot Retention</span> • <span>LMS Webhook Ready</span>
+        <span>512-d ArcFace Biometrics</span> &bull; <span>72h Snapshot Retention</span> &bull; <span>LMS Webhook Ready</span>
       </div>
     </div>
   </footer>
