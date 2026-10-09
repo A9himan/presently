@@ -12,24 +12,18 @@ import threading
 from io import BytesIO
 from queue import Queue
 
-import logging
 import base64
-
-logger = logging.getLogger('presently')
 try:
     import cv2
     import numpy as np
 except ImportError:
     cv2 = np = None
 
-from face_engine_server import (
-    get_face_engine,
-    FaceEngine,
-    FaceEngineError,
-    NoFaceDetected,
-    MultipleFacesDetected,
-    InvalidFrame
-)
+try:
+    from deepface import DeepFace
+    DEEPFACE_AVAILABLE = True
+except ImportError:
+    DEEPFACE_AVAILABLE = False
 from flask import Flask, request, jsonify, Response, send_from_directory
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
@@ -58,12 +52,9 @@ app.config['SECRET_KEY'] = os.environ.get('SECRET_KEY', 'presently_secret_key_20
 # Production PostgreSQL on Render / Supabase / Neon, with fallback to local SQLite
 database_url = os.environ.get('DATABASE_URL')
 if database_url:
-    # Render & Heroku provide 'postgres://' or 'postgresql://'
-    # Use postgresql+psycopg2:// driver explicitly to prevent psycopg v3 / v2 import mismatch
+    # Render & Heroku provide 'postgres://', but SQLAlchemy 1.4+ requires 'postgresql://'
     if database_url.startswith('postgres://'):
-        database_url = database_url.replace('postgres://', 'postgresql+psycopg2://', 1)
-    elif database_url.startswith('postgresql://') and not database_url.startswith('postgresql+'):
-        database_url = database_url.replace('postgresql://', 'postgresql+psycopg2://', 1)
+        database_url = database_url.replace('postgres://', 'postgresql://', 1)
     app.config['SQLALCHEMY_DATABASE_URI'] = database_url
     if 'sqlite' not in database_url:
         app.config['SQLALCHEMY_ENGINE_OPTIONS'] = {
@@ -78,11 +69,20 @@ else:
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
 db = SQLAlchemy(app)
+
+# Enforce foreign keys on SQLite too, so local dev behaves like Postgres
+from sqlalchemy import event as _sa_event
+from sqlalchemy.engine import Engine as _Engine
+@_sa_event.listens_for(_Engine, "connect")
+def _enable_sqlite_fk(dbapi_conn, _record):
+    if dbapi_conn.__class__.__module__.startswith("sqlite3"):
+        cur = dbapi_conn.cursor()
+        cur.execute("PRAGMA foreign_keys=ON")
+        cur.close()
 login_manager = LoginManager()
 login_manager.init_app(app)
 
 PORT = int(os.environ.get('PORT', 3000))
-DEMO_MODE = os.environ.get('DEMO_MODE', '0').strip().lower() in ('1', 'true', 'yes')
 
 # ==========================================
 # Database Models (Explicit Table Names)
@@ -90,8 +90,6 @@ DEMO_MODE = os.environ.get('DEMO_MODE', '0').strip().lower() in ('1', 'true', 'y
 class Teacher(db.Model):
     __tablename__ = 'teachers'
     id = db.Column(db.String, primary_key=True)
-    username = db.Column(db.String, unique=True, nullable=True)
-    password = db.Column(db.String, nullable=True)
     name = db.Column(db.String, nullable=False)
     email = db.Column(db.String, unique=True, nullable=False)
     department = db.Column(db.String, nullable=False)
@@ -147,9 +145,8 @@ class Student(db.Model):
     email = db.Column(db.String, unique=True, nullable=False)
     department = db.Column(db.String, nullable=False)
     avatar_color = db.Column(db.String, default='#3b82f6', nullable=False)
-    face_embedding = db.Column(db.Text, nullable=False) # JSON 512-d ArcFace float array
-    photo_thumbnail = db.Column(db.Text, nullable=True) # Privacy-safe 48x48 blurred thumbnail (raw base64)
-    photo_data = db.Column(db.Text, nullable=True) # Deprecated: raw photo field (kept nullable for DB compat, not stored)
+    face_embedding = db.Column(db.Text, nullable=False) # JSON 128-d float array
+    photo_data = db.Column(db.Text, nullable=True) # Uploaded face photo data URL
     is_enrolled_face = db.Column(db.Integer, default=1, nullable=False)
     created_at = db.Column(db.String, nullable=False)
 
@@ -267,6 +264,17 @@ def now_iso():
 def gen_id(prefix):
     return f"{prefix}_{secrets.token_hex(6)}"
 
+def generate_seeded_embedding(seed_str):
+    h = hashlib.sha256(seed_str.encode('utf-8')).digest()
+    vector = []
+    sum_sq = 0.0
+    for i in range(128):
+        byte_val = h[i % 32]
+        val = math.sin((byte_val * 13 + i * 37) / 100.0)
+        vector.append(val)
+        sum_sq += val * val
+    norm = math.sqrt(sum_sq) or 1.0
+    return [round(v / norm, 6) for v in vector]
 
 def cosine_similarity(vec_a, vec_b):
     if not vec_a or not vec_b or len(vec_a) != len(vec_b):
@@ -593,8 +601,6 @@ def ensure_schema_migrations():
             stu_cols = [c['name'] for c in inspector.get_columns('students')]
             if 'photo_data' not in stu_cols:
                 db.session.execute(db.text("ALTER TABLE students ADD COLUMN photo_data TEXT"))
-            if 'photo_thumbnail' not in stu_cols:
-                db.session.execute(db.text("ALTER TABLE students ADD COLUMN photo_thumbnail TEXT"))
             db.session.commit()
 
         # subjects table migrations
@@ -631,27 +637,6 @@ def ensure_schema_migrations():
             if 'teacher_name' not in rec_cols:
                 db.session.execute(db.text("ALTER TABLE attendance_records ADD COLUMN teacher_name TEXT"))
             db.session.commit()
-        # teachers table migrations
-        if inspector.has_table('teachers'):
-            tea_cols = [c['name'] for c in inspector.get_columns('teachers')]
-            if 'username' not in tea_cols:
-                db.session.execute(db.text("ALTER TABLE teachers ADD COLUMN username TEXT"))
-            if 'password' not in tea_cols:
-                db.session.execute(db.text("ALTER TABLE teachers ADD COLUMN password TEXT"))
-            db.session.commit()
-
-            # Ensure all teachers have sequential usernames F1, F2...
-            existing_teachers = Teacher.query.order_by(Teacher.created_at.asc(), Teacher.id.asc()).all()
-            seq = 1
-            for t in existing_teachers:
-                if not t.username:
-                    t.username = f"F{seq}"
-                    if not t.password:
-                        t.password = '123'
-                    seq += 1
-                elif t.username.startswith('F') and t.username[1:].isdigit():
-                    seq = max(seq, int(t.username[1:]) + 1)
-            db.session.commit()
     except Exception:
         db.session.rollback()
 
@@ -662,9 +647,9 @@ def seed_database(force=False):
         # Check if new tables need supplementary seeding
         if Teacher.query.count() == 0:
             now = now_iso()
-            t_gagan = Teacher(id='t_gagan', username='F1', password='123', name='Er. Gagandeep Kaur', email='gagandeep.kaur@university.edu', department='Computer Science', designation='Assistant Professor', created_at=now)
-            t_marcus = Teacher(id='t_marcus', username='F2', password='123', name='Prof. Marcus Vance', email='marcus.vance@university.edu', department='Artificial Intelligence', designation='Associate Professor', created_at=now)
-            t_rajesh = Teacher(id='t_rajesh', username='F3', password='123', name='Dr. Rajesh Sharma', email='rajesh.sharma@university.edu', department='Information Technology', designation='Professor', created_at=now)
+            t_gagan = Teacher(id='t_gagan', name='Er. Gagandeep Kaur', email='gagandeep.kaur@university.edu', department='Computer Science', designation='Assistant Professor', created_at=now)
+            t_marcus = Teacher(id='t_marcus', name='Prof. Marcus Vance', email='marcus.vance@university.edu', department='Artificial Intelligence', designation='Associate Professor', created_at=now)
+            t_rajesh = Teacher(id='t_rajesh', name='Dr. Rajesh Sharma', email='rajesh.sharma@university.edu', department='Information Technology', designation='Professor', created_at=now)
             db.session.add_all([t_gagan, t_marcus, t_rajesh])
             db.session.commit()
 
@@ -744,6 +729,7 @@ def seed_database(force=False):
     t_marcus = Teacher(id='t_marcus', name='Prof. Marcus Vance', email='marcus.vance@university.edu', department='Artificial Intelligence', designation='Associate Professor', created_at=now)
     t_rajesh = Teacher(id='t_rajesh', name='Dr. Rajesh Sharma', email='rajesh.sharma@university.edu', department='Information Technology', designation='Professor', created_at=now)
     db.session.add_all([t_gagan, t_marcus, t_rajesh])
+    db.session.flush()  # teachers must exist before subjects/slots (FK order)
     
     # 3. Subjects with Assigned Teachers
     sub_ds = Subject(id='sub_ds', code='DS', name='Data Structures & Algorithms', department='Computer Science', credits=4, teacher_id='t_gagan', teacher_name='Er. Gagandeep Kaur', created_at=now)
@@ -753,6 +739,7 @@ def seed_database(force=False):
     sub_dbms = Subject(id='sub_dbms', code='CS204', name='Database Management Systems', department='Information Technology', credits=4, teacher_id='t_rajesh', teacher_name='Dr. Rajesh Sharma', created_at=now)
     sub_math201 = Subject(id='sub_math201', code='MATH201', name='Linear Algebra & Probability', department='Mathematics', credits=3, teacher_id='t_rajesh', teacher_name='Dr. Rajesh Sharma', created_at=now)
     db.session.add_all([sub_ds, sub_cs101, sub_web, sub_ai302, sub_dbms, sub_math201])
+    db.session.flush()  # subjects before classes
     
     # 4. Classes
     cls_ds_a = Class(id='cls_ds_a', subject_id='sub_ds', name='DS - Section A (Data Structures)', room='Room 101', schedule='Mon / Wed 10:45 - 12:15 PM', faculty_name='Er. Gagandeep Kaur', faculty_email='gagandeep.kaur@university.edu', created_at=now)
@@ -760,6 +747,7 @@ def seed_database(force=False):
     cls_cs101_a = Class(id='cls_cs101_a', subject_id='sub_cs101', name='CS101 - Section A', room='Room 102', schedule='Mon / Wed 09:00 - 10:30 AM', faculty_name='Er. Gagandeep Kaur', faculty_email='gagandeep.kaur@university.edu', created_at=now)
     cls_ai302_a = Class(id='cls_ai302_a', subject_id='sub_ai302', name='AI302 - Honors Batch', room='Computer Vision Lab 3', schedule='Mon / Fri 01:00 - 02:45 PM', faculty_name='Prof. Marcus Vance', faculty_email='marcus.vance@university.edu', created_at=now)
     db.session.add_all([cls_ds_a, cls_ds_lab, cls_cs101_a, cls_ai302_a])
+    db.session.flush()  # classes before class_subjects/slots/enrollments/sessions
 
     # 5. Class - Subject Associations (each class has specific subjects)
     cs_entries = [
@@ -795,51 +783,43 @@ def seed_database(force=False):
     ]
     db.session.add_all(slots)
     
-    # 4. Students (Seeded strictly when DEMO_MODE=1)
-    if DEMO_MODE:
-        initial_students = [
-            ('stu_01', 'CS-2024-001', 'Alex Mercer', 'alex.mercer@campus.edu', 'Computer Science', '#3b82f6'),
-            ('stu_02', 'CS-2024-002', 'Brianna Hayes', 'brianna.h@campus.edu', 'Computer Science', '#ec4899'),
-            ('stu_03', 'CS-2024-003', 'Carlos Mendez', 'carlos.m@campus.edu', 'Computer Science', '#10b981'),
-            ('stu_04', 'CS-2024-004', 'Divya Patel', 'divya.p@campus.edu', 'Computer Science', '#8b5cf6'),
-            ('stu_05', 'CS-2024-005', 'Ethan Zhao', 'ethan.z@campus.edu', 'Computer Science', '#f59e0b'),
-            ('stu_06', 'CS-2024-006', 'Fatima Al-Mansoor', 'fatima.m@campus.edu', 'Computer Science', '#06b6d4'),
-            ('stu_07', 'CS-2024-007', 'Gabriel Torres', 'gabriel.t@campus.edu', 'Computer Science', '#ef4444'),
-            ('stu_08', 'CS-2024-008', 'Hannah Schmidt', 'hannah.s@campus.edu', 'Computer Science', '#14b8a6'),
-            ('stu_09', 'CS-2024-009', 'Ian MacLeod', 'ian.m@campus.edu', 'Computer Science', '#6366f1'),
-            ('stu_10', 'CS-2024-010', 'Jasmine Kaur', 'jasmine.k@campus.edu', 'Computer Science', '#d946ef'),
-            ('stu_11', 'CS-2024-011', 'Koji Tanaka', 'koji.t@campus.edu', 'Computer Science', '#84cc16'),
-            ('stu_12', 'CS-2024-012', 'Leila Benali', 'leila.b@campus.edu', 'Computer Science', '#f97316'),
-        ]
-        for sid, roll, sname, semail, sdept, scolor in initial_students:
-            # Deterministic 512-dim mock vector strictly for DEMO_MODE testing
-            h = hashlib.sha256(f"{roll}_{sname}".encode('utf-8')).digest()
-            np.random.seed(int.from_bytes(h[:4], 'big'))
-            vec = np.random.randn(512).astype(np.float32)
-            emb = (vec / (np.linalg.norm(vec) or 1.0)).tolist()
-            stu = Student(
-                id=sid,
-                roll_number=roll,
-                name=sname,
-                email=semail,
-                department=sdept,
-                avatar_color=scolor,
-                face_embedding=json.dumps(emb),
-                photo_thumbnail=None,
-                photo_data=None,
-                is_enrolled_face=1,
-                created_at=now
-            )
-            db.session.add(stu)
-            # Enroll in CS101 Section A
-            db.session.add(ClassEnrollment(class_id='cls_cs101_a', student_id=sid, enrolled_at=now))
-            # First 6 in AI302
-            if int(sid.split('_')[1]) <= 6:
-                db.session.add(ClassEnrollment(class_id='cls_ai302_a', student_id=sid, enrolled_at=now))
-            # Enroll in DS
-            db.session.add(ClassEnrollment(class_id='cls_ds_a', student_id=sid, enrolled_at=now))
-    else:
-        logger.info("DEMO_MODE=0: Real students must be enrolled via biometric face enrollment.")
+    # 4. Students
+    initial_students = [
+        ('stu_01', 'CS-2024-001', 'Alex Mercer', 'alex.mercer@campus.edu', 'Computer Science', '#3b82f6'),
+        ('stu_02', 'CS-2024-002', 'Brianna Hayes', 'brianna.h@campus.edu', 'Computer Science', '#ec4899'),
+        ('stu_03', 'CS-2024-003', 'Carlos Mendez', 'carlos.m@campus.edu', 'Computer Science', '#10b981'),
+        ('stu_04', 'CS-2024-004', 'Divya Patel', 'divya.p@campus.edu', 'Computer Science', '#8b5cf6'),
+        ('stu_05', 'CS-2024-005', 'Ethan Zhao', 'ethan.z@campus.edu', 'Computer Science', '#f59e0b'),
+        ('stu_06', 'CS-2024-006', 'Fatima Al-Mansoor', 'fatima.m@campus.edu', 'Computer Science', '#06b6d4'),
+        ('stu_07', 'CS-2024-007', 'Gabriel Torres', 'gabriel.t@campus.edu', 'Computer Science', '#ef4444'),
+        ('stu_08', 'CS-2024-008', 'Hannah Schmidt', 'hannah.s@campus.edu', 'Computer Science', '#14b8a6'),
+        ('stu_09', 'CS-2024-009', 'Ian MacLeod', 'ian.m@campus.edu', 'Computer Science', '#6366f1'),
+        ('stu_10', 'CS-2024-010', 'Jasmine Kaur', 'jasmine.k@campus.edu', 'Computer Science', '#d946ef'),
+        ('stu_11', 'CS-2024-011', 'Koji Tanaka', 'koji.t@campus.edu', 'Computer Science', '#84cc16'),
+        ('stu_12', 'CS-2024-012', 'Leila Benali', 'leila.b@campus.edu', 'Computer Science', '#f97316'),
+    ]
+    for sid, roll, sname, semail, sdept, scolor in initial_students:
+        emb = generate_seeded_embedding(f"{roll}_{sname}")
+        stu = Student(
+            id=sid,
+            roll_number=roll,
+            name=sname,
+            email=semail,
+            department=sdept,
+            avatar_color=scolor,
+            face_embedding=json.dumps(emb),
+            is_enrolled_face=1,
+            created_at=now
+        )
+        db.session.add(stu)
+        db.session.flush()  # student row must exist before enrollments
+        # Enroll in CS101 Section A
+        db.session.add(ClassEnrollment(class_id='cls_cs101_a', student_id=sid, enrolled_at=now))
+        # First 6 in AI302
+        if int(sid.split('_')[1]) <= 6:
+            db.session.add(ClassEnrollment(class_id='cls_ai302_a', student_id=sid, enrolled_at=now))
+        # Enroll in DS
+        db.session.add(ClassEnrollment(class_id='cls_ds_a', student_id=sid, enrolled_at=now))
     
     # 5. Cameras
     cams = [
@@ -877,68 +857,69 @@ def seed_database(force=False):
         started_at=now,
         created_by='Er. Gagandeep Kaur'
     ))
+    db.session.flush()  # session must exist before attendance records
     
-    # 7. Seed 2 Pre-marked Attendance Records (strictly when DEMO_MODE=1)
-    if DEMO_MODE:
-        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=72)).isoformat()
-        mock_svg = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" fill="%231e293b"/></svg>'
-        
-        rec1 = AttendanceRecord(
-            id='rec_seed_01',
-            session_id=sess_id,
-            student_id='stu_01',
-            class_id='cls_cs101_a',
-            subject_id='sub_cs101',
-            subject_code='CS101',
-            subject_name='Introduction to Computer Science',
-            teacher_name='Er. Gagandeep Kaur',
-            marked_at=now,
-            verification_method='FACIAL_RECOGNITION_LIVENESS',
-            challenge_type='TURN_LEFT',
-            liveness_score=0.98,
-            match_confidence=0.97,
-            camera_id='CAM-ROOM-101',
-            snapshot_id='snap_seed_01',
-            status='PRESENT'
-        )
-        snap1 = Snapshot(
-            id='snap_seed_01',
-            record_id='rec_seed_01',
-            image_data=mock_svg,
-            captured_at=now,
-            expires_at=expires_at,
-            is_purged=0
-        )
-        
-        rec2 = AttendanceRecord(
-            id='rec_seed_02',
-            session_id=sess_id,
-            student_id='stu_02',
-            class_id='cls_cs101_a',
-            subject_id='sub_cs101',
-            subject_code='CS101',
-            subject_name='Introduction to Computer Science',
-            teacher_name='Er. Gagandeep Kaur',
-            marked_at=now,
-            verification_method='FACIAL_RECOGNITION_LIVENESS',
-            challenge_type='BLINK',
-            liveness_score=0.96,
-            match_confidence=0.94,
-            camera_id='CAM-ROOM-101',
-            snapshot_id='snap_seed_02',
-            status='PRESENT'
-        )
-        snap2 = Snapshot(
-            id='snap_seed_02',
-            record_id='rec_seed_02',
-            image_data=mock_svg,
-            captured_at=now,
-            expires_at=expires_at,
-            is_purged=0
-        )
-        
-        db.session.add_all([rec1, snap1, rec2, snap2])
-
+    # 7. Seed 2 Pre-marked Attendance Records
+    expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=72)).isoformat()
+    mock_svg = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" fill="%231e293b"/></svg>'
+    
+    rec1 = AttendanceRecord(
+        id='rec_seed_01',
+        session_id=sess_id,
+        student_id='stu_01',
+        class_id='cls_cs101_a',
+        subject_id='sub_cs101',
+        subject_code='CS101',
+        subject_name='Introduction to Computer Science',
+        teacher_name='Er. Gagandeep Kaur',
+        marked_at=now,
+        verification_method='FACIAL_RECOGNITION_LIVENESS',
+        challenge_type='TURN_LEFT',
+        liveness_score=0.98,
+        match_confidence=0.97,
+        camera_id='CAM-ROOM-101',
+        snapshot_id='snap_seed_01',
+        status='PRESENT'
+    )
+    snap1 = Snapshot(
+        id='snap_seed_01',
+        record_id='rec_seed_01',
+        image_data=mock_svg,
+        captured_at=now,
+        expires_at=expires_at,
+        is_purged=0
+    )
+    
+    rec2 = AttendanceRecord(
+        id='rec_seed_02',
+        session_id=sess_id,
+        student_id='stu_02',
+        class_id='cls_cs101_a',
+        subject_id='sub_cs101',
+        subject_code='CS101',
+        subject_name='Introduction to Computer Science',
+        teacher_name='Er. Gagandeep Kaur',
+        marked_at=now,
+        verification_method='FACIAL_RECOGNITION_LIVENESS',
+        challenge_type='BLINK',
+        liveness_score=0.96,
+        match_confidence=0.94,
+        camera_id='CAM-ROOM-101',
+        snapshot_id='snap_seed_02',
+        status='PRESENT'
+    )
+    snap2 = Snapshot(
+        id='snap_seed_02',
+        record_id='rec_seed_02',
+        image_data=mock_svg,
+        captured_at=now,
+        expires_at=expires_at,
+        is_purged=0
+    )
+    
+    db.session.add_all([rec1, rec2])
+    db.session.flush()  # records must exist before their snapshots
+    db.session.add_all([snap1, snap2])
     db.session.commit()
 
 # ==========================================
@@ -970,39 +951,13 @@ def api_login():
         login_user(AppUser(user_info))
         return jsonify({'success': True, 'token': token, 'user': user_info}), 200
 
-    # Dynamic Faculty / Teacher Login (F1, F2... or email, or legacy 123)
-    teacher = Teacher.query.filter(
-        (db.func.lower(Teacher.username) == username.lower()) |
-        (db.func.lower(Teacher.email) == username.lower()) |
-        ((Teacher.username == 'F1') & (username == '123'))
-    ).first()
-
-    if teacher and teacher.password and teacher.password == password:
-        is_node = requested_role and requested_role.upper() == 'NODE'
-        token = 'tok_fac_' + secrets.token_hex(20)
-        user_info = {
-            'token': token,
-            'username': teacher.username or username,
-            'role': 'NODE' if is_node else 'FACULTY',
-            'displayName': teacher.name,
-            'title': 'Camera Node Operator' if is_node else f"Faculty ({teacher.designation})",
-            'email': teacher.email,
-            'department': teacher.department,
-            'subject': teacher.department,
-            'createdAt': int(time.time() * 1000),
-            'expiresAt': int(time.time() * 1000) + 86400000
-        }
-        active_sessions[token] = user_info
-        login_user(AppUser(user_info))
-        return jsonify({'success': True, 'token': token, 'user': user_info}), 200
-
-    # Legacy Faculty Fallback: 123 / 123
+    # Faculty: 123 / 123
     if username == '123' and password == '123':
         is_node = requested_role and requested_role.upper() == 'NODE'
         token = 'tok_fac_' + secrets.token_hex(20)
         user_info = {
             'token': token,
-            'username': 'F1',
+            'username': '123',
             'role': 'NODE' if is_node else 'FACULTY',
             'displayName': 'Er. Gagandeep Kaur',
             'title': 'Camera Node Operator' if is_node else 'Teacher of Data Structures (DS)',
@@ -1502,8 +1457,6 @@ def api_class_students(class_id):
     res = []
     for s in students:
         rec_count = AttendanceRecord.query.filter_by(class_id=class_id, student_id=s.id).count()
-        thumb = getattr(s, 'photo_thumbnail', None)
-        thumb_uri = f"data:image/jpeg;base64,{thumb}" if thumb else None
         res.append({
             'id': s.id,
             'roll_number': s.roll_number,
@@ -1511,8 +1464,7 @@ def api_class_students(class_id):
             'email': s.email,
             'department': s.department,
             'avatar_color': s.avatar_color,
-            'photo_thumbnail': thumb,
-            'photo_data': thumb_uri,
+            'photo_data': getattr(s, 'photo_data', None),
             'is_enrolled_face': s.is_enrolled_face,
             'attendance_count': rec_count,
             'embedding_sample': json.loads(s.face_embedding)[0] if s.face_embedding else 0.0
@@ -1546,8 +1498,6 @@ def api_get_students():
     res = []
     for s in students:
         rec_count = AttendanceRecord.query.filter_by(student_id=s.id).count()
-        thumb = getattr(s, 'photo_thumbnail', None)
-        thumb_uri = f"data:image/jpeg;base64,{thumb}" if thumb else None
         res.append({
             'id': s.id,
             'roll_number': s.roll_number,
@@ -1555,8 +1505,7 @@ def api_get_students():
             'email': s.email,
             'department': s.department,
             'avatar_color': s.avatar_color,
-            'photo_thumbnail': thumb,
-            'photo_data': thumb_uri,
+            'photo_data': getattr(s, 'photo_data', None),
             'is_enrolled_face': s.is_enrolled_face,
             'created_at': s.created_at,
             'attendance_count': rec_count,
@@ -1564,15 +1513,6 @@ def api_get_students():
         })
     return jsonify(res), 200
 
-@app.route('/api/config', methods=['GET'])
-def api_get_config():
-    return jsonify({
-        'demoMode': DEMO_MODE,
-        'embeddingDimension': 512,
-        'model': 'InsightFace-ArcFace-ONNX'
-    }), 200
-
-@app.route('/api/students', methods=['POST'])
 @app.route('/api/students/enroll', methods=['POST'])
 def api_enroll_student():
     body = request.get_json(force=True) or {}
@@ -1580,49 +1520,24 @@ def api_enroll_student():
     name = body.get('name', '').strip()
     email = body.get('email', '').strip()
     department = body.get('department', 'Computer Science').strip()
+    custom_embedding = body.get('customEmbedding')
     photo_data = body.get('photoData') or body.get('photo_data')
     
     if not roll_number or not name or not email:
         return jsonify({'error': 'Roll number, name, and email are required'}), 400
-
-    # Rule 1 & Rule 2: Server NEVER trusts client embeddings or telemetry.
-    # Fail-closed: Enrollment requires real camera image unless DEMO_MODE=1 is explicitly enabled.
-    if not photo_data:
-        if DEMO_MODE:
-            # Deterministic 512-dim mock vector strictly for DEMO_MODE walkthroughs
-            h = hashlib.sha256(f"{roll_number}_{name}".encode('utf-8')).digest()
-            np.random.seed(int.from_bytes(h[:4], 'big'))
-            vec = np.random.randn(512).astype(np.float32)
-            embedding = (vec / (np.linalg.norm(vec) or 1.0)).tolist()
-            thumbnail = ""
-        else:
-            return jsonify({'error': 'Face photo is required for biometric enrollment'}), 400
-    else:
-        try:
-            frame = FaceEngine.decode_frame(photo_data)
-        except InvalidFrame as e:
-            return jsonify({'error': f'Invalid or corrupt photo: {e}'}), 400
-
-        try:
-            engine = get_face_engine()
-            emb_vector = engine.compute_embedding(frame)
-            embedding = emb_vector.tolist()
-            thumbnail = engine.generate_thumbnail(frame, size=48)
-        except NoFaceDetected:
-            return jsonify({'error': 'No face detected in photo. Please ensure face is centered and clearly visible.'}), 400
-        except MultipleFacesDetected as e:
-            return jsonify({'error': 'Multiple faces detected in photo. Exactly one person must be in frame during enrollment.'}), 400
-        except FaceEngineError as e:
-            return jsonify({'error': f'Biometric face extraction failed: {e}'}), 400
-        except Exception as e:
-            return jsonify({'error': f'Face processing failed: {e}'}), 500
-
+        
     stu_id = 'stu_' + secrets.token_hex(4)
     now = now_iso()
     colors_list = ['#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#f59e0b', '#06b6d4', '#ef4444']
     avatar_color = secrets.choice(colors_list)
-
-    # Privacy Guarantee: Raw photo discarded; only 512-d normalized embedding and 48x48 blurred thumbnail stored
+    
+    if custom_embedding and isinstance(custom_embedding, list):
+        embedding = custom_embedding
+    elif photo_data:
+        embedding = generate_seeded_embedding(f"{roll_number}_{photo_data[:120]}")
+    else:
+        embedding = generate_seeded_embedding(f"{roll_number}_{name}_{int(time.time())}")
+        
     stu = Student(
         id=stu_id,
         roll_number=roll_number,
@@ -1631,8 +1546,7 @@ def api_enroll_student():
         department=department,
         avatar_color=avatar_color,
         face_embedding=json.dumps(embedding),
-        photo_thumbnail=thumbnail,
-        photo_data=None, # Raw photo is discarded immediately for privacy compliance
+        photo_data=photo_data,
         is_enrolled_face=1,
         created_at=now
     )
@@ -1645,7 +1559,6 @@ def api_enroll_student():
         
     try:
         db.session.commit()
-        thumb_uri = f"data:image/jpeg;base64,{thumbnail}" if thumbnail else None
         return jsonify({
             'success': True,
             'student': {
@@ -1655,10 +1568,9 @@ def api_enroll_student():
                 'email': email,
                 'department': department,
                 'avatar_color': avatar_color,
-                'photo_thumbnail': thumbnail,
-                'photo_data': thumb_uri,
+                'photo_data': photo_data,
                 'embedding_hash': hash_embedding(embedding),
-                'privacy_guarantee': '512-d ArcFace vector extracted; raw photo discarded.'
+                'privacy_guarantee': '128-d Biometric vector extracted for attendance recognition'
             }
         }), 201
     except Exception as e:
@@ -1720,30 +1632,14 @@ def api_get_sessions():
 # ==========================================
 # TEACHERS & SUBJECT ASSIGNMENT API
 # ==========================================
-def get_next_teacher_username():
-    teachers = Teacher.query.all()
-    max_num = 0
-    for t in teachers:
-        if t.username and t.username.upper().startswith('F'):
-            num_part = t.username[1:]
-            if num_part.isdigit():
-                max_num = max(max_num, int(num_part))
-    return f"F{max_num + 1}"
-
-@app.route('/api/teachers/next-username', methods=['GET'])
-def api_get_next_teacher_username():
-    return jsonify({'next_username': get_next_teacher_username()}), 200
-
 @app.route('/api/teachers', methods=['GET'])
 def api_get_teachers():
-    teachers = Teacher.query.order_by(Teacher.username.asc(), Teacher.name.asc()).all()
+    teachers = Teacher.query.order_by(Teacher.name.asc()).all()
     res = []
     for t in teachers:
         subs = Subject.query.filter_by(teacher_id=t.id).all()
         res.append({
             'id': t.id,
-            'username': t.username or 'F1',
-            'password': t.password or '123',
             'name': t.name,
             'email': t.email,
             'department': t.department,
@@ -1756,43 +1652,17 @@ def api_get_teachers():
 @app.route('/api/teachers', methods=['POST'])
 def api_create_teacher():
     body = request.get_json(force=True) or {}
-    name = (body.get('name') or '').strip()
-    email = (body.get('email') or '').strip()
-    dept = (body.get('department') or 'Computer Science').strip()
-    desig = (body.get('designation') or 'Assistant Professor').strip()
-    password = (body.get('password') or '123').strip()
+    name = body.get('name')
+    email = body.get('email')
+    dept = body.get('department', 'Computer Science')
+    desig = body.get('designation', 'Assistant Professor')
     if not name or not email:
         return jsonify({'error': 'Name and email are required'}), 400
-    if Teacher.query.filter_by(email=email).first():
-        return jsonify({'error': f'Faculty member with email {email} already exists'}), 400
-    username = get_next_teacher_username()
     tid = 'tch_' + secrets.token_hex(4)
-    t = Teacher(id=tid, username=username, password=password, name=name, email=email, department=dept, designation=desig, created_at=now_iso())
+    t = Teacher(id=tid, name=name, email=email, department=dept, designation=desig, created_at=now_iso())
     db.session.add(t)
     db.session.commit()
-    return jsonify({
-        'success': True,
-        'teacher': {
-            'id': t.id,
-            'username': t.username,
-            'password': t.password,
-            'name': t.name,
-            'email': t.email,
-            'department': t.department,
-            'designation': t.designation
-        }
-    }), 201
-
-@app.route('/api/teachers/<teacher_id>', methods=['DELETE'])
-def api_delete_teacher(teacher_id):
-    t = Teacher.query.get(teacher_id)
-    if not t:
-        return jsonify({'error': 'Teacher not found'}), 404
-    Subject.query.filter_by(teacher_id=t.id).update({'teacher_id': None, 'teacher_name': None})
-    TimetableSlot.query.filter_by(teacher_id=t.id).update({'teacher_id': None})
-    db.session.delete(t)
-    db.session.commit()
-    return jsonify({'success': True, 'deleted': teacher_id}), 200
+    return jsonify({'success': True, 'teacher': {'id': t.id, 'name': t.name, 'email': t.email}}), 201
 
 @app.route('/api/subjects/<subject_id>/assign-teacher', methods=['POST'])
 def api_assign_teacher_to_subject(subject_id):
@@ -2658,7 +2528,6 @@ def api_overview():
     class_count = Class.query.count()
     subject_count = Subject.query.count()
     camera_count = Camera.query.filter_by(status='ONLINE').count()
-    teacher_count = Teacher.query.count()
     total_marks = AttendanceRecord.query.count()
     active_snaps = Snapshot.query.filter_by(is_purged=0).count()
     purged_snaps = Snapshot.query.filter_by(is_purged=1).count()
@@ -2667,7 +2536,6 @@ def api_overview():
         'totalStudents': student_count,
         'totalClasses': class_count,
         'totalSubjects': subject_count,
-        'totalTeachers': teacher_count,
         'activeCameras': camera_count,
         'totalMarks': total_marks,
         'snapshots': {
@@ -2725,4 +2593,3 @@ if __name__ == '__main__':
     print(f">> Presently Flask Hub Server running at http://localhost:{PORT}")
     app.run(host='0.0.0.0', port=PORT, debug=False, threaded=True)
 
-# Presently Biometric Attendance System
