@@ -563,6 +563,158 @@ class PresentlyFaceEngine {
     return vector.map(v => Number((v / norm).toFixed(6)));
   }
 
+  // Initialize or reset active liveness challenge session
+  startLivenessChallenge(action = 'TURN_RIGHT') {
+    this.livenessSession = {
+      action: action,
+      startTime: performance.now(),
+      calibrated: false,
+      calibSamples: [],
+      baselineYaw: null,
+      baselineEyeMetric: null,
+      smoothedYaw: 0,
+      relativeYaw: 0,
+      progress: 0,
+      persistenceFrames: 0,
+      eyeClosed: false,
+      blinksCounted: 0,
+      completed: false,
+      isStatic: false,
+      lastDetectedTime: performance.now()
+    };
+    if (window.DEBUG_LIVENESS) {
+      console.log(`[LIVENESS] Started challenge: ${action} | Awaiting neutral baseline calibration...`);
+    }
+  }
+
+  // Update challenge state from analyzed frame
+  updateLiveness(analysis) {
+    if (!this.livenessSession) {
+      this.startLivenessChallenge('TURN_RIGHT');
+    }
+    const session = this.livenessSession;
+    if (session.completed) {
+      return { ...session, completed: true, progress: 1.0 };
+    }
+
+    if (!analysis) {
+      const timeSinceDetect = performance.now() - session.lastDetectedTime;
+      if (timeSinceDetect > 2000) {
+        session.calibrated = false;
+        session.calibSamples = [];
+        session.baselineYaw = null;
+      }
+      return {
+        action: session.action,
+        calibrated: session.calibrated,
+        relativeYaw: session.relativeYaw,
+        smoothedYaw: session.smoothedYaw,
+        progress: session.progress,
+        blinksCounted: session.blinksCounted,
+        completed: false,
+        isStatic: session.isStatic
+      };
+    }
+
+    session.lastDetectedTime = performance.now();
+    session.isStatic = analysis.isStatic;
+
+    // Phase 1: Calibrate neutral baseline (first 5 frames while looking center)
+    if (!session.calibrated) {
+      session.calibSamples.push({ yaw: analysis.rawYaw, eye: analysis.eyeMetric });
+      if (session.calibSamples.length >= 5) {
+        const sumYaw = session.calibSamples.reduce((acc, s) => acc + s.yaw, 0);
+        const sumEye = session.calibSamples.reduce((acc, s) => acc + s.eye, 0);
+        session.baselineYaw = sumYaw / session.calibSamples.length;
+        session.baselineEyeMetric = sumEye / session.calibSamples.length;
+        session.calibrated = true;
+        session.smoothedYaw = 0;
+        if (window.DEBUG_LIVENESS) {
+          console.log(`[LIVENESS] Calibrated neutral baseline: baselineYaw=${session.baselineYaw.toFixed(1)}°, baselineEye=${session.baselineEyeMetric.toFixed(3)}`);
+        }
+      } else {
+        return {
+          action: session.action,
+          calibrated: false,
+          progress: 0.05,
+          relativeYaw: 0,
+          smoothedYaw: 0,
+          blinksCounted: 0,
+          completed: false
+        };
+      }
+    }
+
+    // Phase 2: Compute relative rotation from neutral baseline
+    const relYaw = analysis.rawYaw - (session.baselineYaw || 0);
+    session.relativeYaw = relYaw;
+
+    // Temporal smoothing: Exponential Moving Average (alpha=0.35)
+    session.smoothedYaw = session.smoothedYaw * 0.65 + relYaw * 0.35;
+
+    const action = session.action;
+    const YAW_THRESHOLD = 12.0; // 12 degrees threshold required by backend
+
+    if (action === 'TURN_RIGHT') {
+      // Mirrored screen coordinate: user turning head right -> smoothedYaw is positive
+      const ratio = Math.max(0, Math.min(1.0, session.smoothedYaw / YAW_THRESHOLD));
+      session.progress = Math.max(session.progress * 0.90, ratio);
+
+      if (session.smoothedYaw >= YAW_THRESHOLD) {
+        session.persistenceFrames++;
+      } else {
+        session.persistenceFrames = Math.max(0, session.persistenceFrames - 1);
+      }
+
+      if (session.persistenceFrames >= 3 && session.progress >= 0.95) {
+        session.completed = true;
+        session.progress = 1.0;
+      }
+    } else if (action === 'TURN_LEFT') {
+      // Mirrored screen coordinate: user turning head left -> smoothedYaw is negative
+      const ratio = Math.max(0, Math.min(1.0, -session.smoothedYaw / YAW_THRESHOLD));
+      session.progress = Math.max(session.progress * 0.90, ratio);
+
+      if (session.smoothedYaw <= -YAW_THRESHOLD) {
+        session.persistenceFrames++;
+      } else {
+        session.persistenceFrames = Math.max(0, session.persistenceFrames - 1);
+      }
+
+      if (session.persistenceFrames >= 3 && session.progress >= 0.95) {
+        session.completed = true;
+        session.progress = 1.0;
+      }
+    } else if (action === 'BLINK') {
+      const baseEye = session.baselineEyeMetric || 0.15;
+      if (analysis.eyeMetric < baseEye * 0.60 || analysis.eyeMetric < 0.04) {
+        session.eyeClosed = true;
+        session.progress = Math.max(session.progress, 0.50);
+      } else if (session.eyeClosed && analysis.eyeMetric > baseEye * 0.78) {
+        session.blinksCounted++;
+        session.eyeClosed = false;
+        session.progress = 1.0;
+        session.persistenceFrames = 3;
+        session.completed = true;
+      }
+    }
+
+    if (window.DEBUG_LIVENESS) {
+      console.log(`[LIVENESS] ${action} | relYaw: ${relYaw.toFixed(1)}° | smooth: ${session.smoothedYaw.toFixed(1)}° | prog: ${(session.progress * 100).toFixed(0)}% | persist: ${session.persistenceFrames}/3 | done: ${session.completed}`);
+    }
+
+    return {
+      action: session.action,
+      calibrated: session.calibrated,
+      relativeYaw: session.relativeYaw,
+      smoothedYaw: session.smoothedYaw,
+      progress: session.progress,
+      blinksCounted: session.blinksCounted,
+      completed: session.completed,
+      isStatic: session.isStatic
+    };
+  }
+
   // Real-time Optical Flow, Blink & Head Yaw Analysis on Video Frame
   analyzeLivenessFrame(videoEl, boxX, boxY, boxW, boxH) {
     if (!videoEl || !videoEl.videoWidth || !videoEl.videoHeight) return null;
@@ -579,16 +731,38 @@ class PresentlyFaceEngine {
     const vh = videoEl.videoHeight;
     const cw = this.canvasElement ? this.canvasElement.width : 640;
     const ch = this.canvasElement ? this.canvasElement.height : 480;
-    
-    const sx = Math.max(0, (boxX / cw) * vw);
-    const sy = Math.max(0, (boxY / ch) * vh);
-    const sw = Math.min(vw - sx, (boxW / cw) * vw);
-    const sh = Math.min(vh - sy, (boxH / ch) * vh);
-    
+
+    // Prefer dynamically tracked face bounding box if available
+    let fx = boxX !== undefined ? boxX : (cw * 0.3);
+    let fy = boxY !== undefined ? boxY : (ch * 0.15);
+    let fw = boxW !== undefined ? boxW : (cw * 0.35);
+    let fh = boxH !== undefined ? boxH : fw;
+    if (this.tracker && this.tracker.detected) {
+      fx = this.tracker.x;
+      fy = this.tracker.y;
+      fw = this.tracker.size;
+      fh = this.tracker.size;
+    }
+
+    // Invert mirrored canvas X to unmirrored video source X
+    const unmirroredCanvasX = cw - (fx + fw);
+    const sx = Math.max(0, (unmirroredCanvasX / cw) * vw);
+    const sy = Math.max(0, (fy / ch) * vh);
+    const sw = Math.min(vw - sx, (fw / cw) * vw);
+    const sh = Math.min(vh - sy, (fh / ch) * vh);
+
+    if (sw <= 10 || sh <= 10) return null;
+
+    // Render into 120x120 canvas with horizontal mirror flip matching on-screen orientation
+    ctx.save();
+    ctx.translate(120, 0);
+    ctx.scale(-1, 1);
     ctx.drawImage(videoEl, sx, sy, sw, sh, 0, 0, 120, 120);
+    ctx.restore();
+
     const currImgData = ctx.getImageData(0, 0, 120, 120);
     const data = currImgData.data;
-    
+
     // 1. Motion Delta (Static Photo vs Live Human)
     let totalDiff = 0;
     if (this._prevLivenessData) {
@@ -600,43 +774,89 @@ class PresentlyFaceEngine {
     this._prevLivenessData = currImgData;
     const avgDiff = totalDiff / ((120 * 120 / 2) * 3);
     const isStatic = avgDiff < 0.65;
-    
+
     // 2. Eye strip energy (Eye aperture / Blink metric)
     let eyeDarkPixels = 0;
     let eyeTotalPixels = 0;
-    for (let y = 35; y < 55; y += 2) {
+    for (let y = 30; y < 55; y += 2) {
       for (let x = 25; x < 95; x += 2) {
         const idx = (y * 120 + x) * 4;
         const lum = (data[idx] * 0.299 + data[idx+1] * 0.587 + data[idx+2] * 0.114);
-        if (lum < 60) eyeDarkPixels++;
+        if (lum < 65) eyeDarkPixels++;
         eyeTotalPixels++;
       }
     }
     const eyeMetric = eyeDarkPixels / (eyeTotalPixels || 1);
-    
-    // 3. Head Yaw Asymmetry (Left cheek vs Right cheek balance)
-    let leftCheekLum = 0;
-    let rightCheekLum = 0;
-    let countCheek = 0;
-    for (let y = 45; y < 80; y += 2) {
-      for (let x = 15; x < 45; x += 2) {
-        const idxL = (y * 120 + x) * 4;
-        const idxR = (y * 120 + (120 - x)) * 4;
-        leftCheekLum += data[idxL] * 0.299 + data[idxL+1] * 0.587 + data[idxL+2] * 0.114;
-        rightCheekLum += data[idxR] * 0.299 + data[idxR+1] * 0.587 + data[idxR+2] * 0.114;
-        countCheek++;
+
+    // 3. Robust Head Yaw Angle Estimation (Geometry + Features)
+    let sumFeatX = 0;
+    let countFeat = 0;
+    let leftSkin = 0;
+    let rightSkin = 0;
+
+    for (let y = 30; y < 90; y += 2) {
+      for (let x = 10; x < 110; x += 2) {
+        const idx = (y * 120 + x) * 4;
+        const r = data[idx];
+        const g = data[idx+1];
+        const b = data[idx+2];
+        const lum = r * 0.299 + g * 0.587 + b * 0.114;
+
+        // Dark facial features (eyes, nose nostrils/bridge shadow, mouth)
+        if (lum < 95) {
+          const weight = (95 - lum);
+          sumFeatX += x * weight;
+          countFeat += weight;
+        }
+
+        // YCbCr skin pixel count for cheek balance
+        const yVal = 0.299 * r + 0.587 * g + 0.114 * b;
+        const cb = 128 - 0.168736 * r - 0.331264 * g + 0.5 * b;
+        const cr = 128 + 0.5 * r - 0.418688 * g - 0.081312 * b;
+        if (cb >= 75 && cb <= 135 && cr >= 130 && cr <= 180 && yVal > 35) {
+          if (x < 55) leftSkin++;
+          else if (x > 65) rightSkin++;
+        }
       }
     }
-    leftCheekLum /= (countCheek || 1);
-    rightCheekLum /= (countCheek || 1);
-    const yawAsymmetry = (leftCheekLum - rightCheekLum) / (leftCheekLum + rightCheekLum + 1e-3);
-    const estimatedYaw = Math.round(yawAsymmetry * 120);
-    
+
+    const featCX = countFeat > 0 ? (sumFeatX / countFeat) : 60;
+    const featOffset = featCX - 60; // Offset in pixels from center [-25, +25]
+
+    // Vertical profile / nasal ridge horizontal gradient peak
+    let maxGrad = -1;
+    let noseX = 60;
+    for (let x = 35; x <= 85; x += 2) {
+      let colGrad = 0;
+      for (let y = 35; y < 75; y += 4) {
+        const idxL = (y * 120 + (x - 2)) * 4;
+        const idxR = (y * 120 + (x + 2)) * 4;
+        const lumL = data[idxL] * 0.299 + data[idxL+1] * 0.587 + data[idxL+2] * 0.114;
+        const lumR = data[idxR] * 0.299 + data[idxR+1] * 0.587 + data[idxR+2] * 0.114;
+        colGrad += Math.abs(lumR - lumL);
+      }
+      if (colGrad > maxGrad) {
+        maxGrad = colGrad;
+        noseX = x;
+      }
+    }
+    const noseOffset = noseX - 60;
+
+    // Cheek skin balance ratio
+    const skinRatio = (leftSkin - rightSkin) / (leftSkin + rightSkin + 1e-4);
+
+    // Combined raw yaw in degrees:
+    // Positive = turned to user's right (screen right)
+    // Negative = turned to user's left (screen left)
+    const rawYawDegrees = Math.round(featOffset * 1.5 + noseOffset * 0.7 + skinRatio * 18);
+    const clampedYaw = Math.max(-45, Math.min(45, rawYawDegrees));
+
     return {
       motionDiff: avgDiff,
       isStatic: isStatic,
       eyeMetric: eyeMetric,
-      yawAngle: Math.max(-35, Math.min(35, estimatedYaw))
+      rawYaw: clampedYaw,
+      yawAngle: clampedYaw
     };
   }
 

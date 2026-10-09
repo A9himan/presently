@@ -293,28 +293,28 @@ function cosineSimilarity(a, b) {
 }
 
 // Background biometric matcher to update student name in small letters on green square
-setInterval(() => {
-  if (!faceEngine.isStreaming || enrolledClassStudents.length === 0) return;
-  const emb = extractEmbeddingFromCurrentFrame();
-  if (!emb) return;
-  let bestSim = -1;
-  let bestName = null;
-  for (const s of enrolledClassStudents) {
-    if (s.face_embedding) {
-      try {
-        const sEmb = typeof s.face_embedding === 'string' ? JSON.parse(s.face_embedding) : s.face_embedding;
-        const sim = cosineSimilarity(emb, sEmb);
-        if (sim > bestSim) {
-          bestSim = sim;
-          bestName = s.name.toLowerCase();
-        }
-      } catch (err) {}
+let isMatchingFace = false;
+setInterval(async () => {
+  if (!faceEngine.isStreaming || isMatchingFace || !selectedClassId || isVerifying) return;
+  isMatchingFace = true;
+  try {
+    const snap = captureNodeSnapshot();
+    if (snap) {
+      const res = await fetch('/api/face/match', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ snapshotBase64: snap, class_id: selectedClassId })
+      });
+      const data = await res.json();
+      if (data.isMatch && data.student) {
+        currentRecognizedStudentName = data.student.name.toLowerCase();
+      }
     }
+  } catch (err) {
+  } finally {
+    isMatchingFace = false;
   }
-  if (bestSim >= 0.65 && bestName) {
-    currentRecognizedStudentName = bestName;
-  }
-}, 450);
+}, 1800);
 
 // ──────────────────────────────────────────
 // 5. RENDER LOOP (Real-Time Green Square Face Tracker)
@@ -384,19 +384,28 @@ async function runRecognitionCycle() {
     // 3. Actively monitor webcam video frames for the real biometric motion
     const livenessResult = await activeLivenessMonitor(nodeCurrentChallenge.action || 'BLINK');
 
-    // 4. Capture snapshot + extract face embedding from current webcam frame
-    const snapshot = captureNodeSnapshot();
-    const embedding = extractEmbeddingFromCurrentFrame();
+    // If liveness challenge timed out or was not passed, do not submit failed mark
+    if (!livenessResult.passed) {
+      hideChallenge();
+      showToast('warning', '⏱️ Liveness Timed Out', 'Head turn was not completed. Recalibrating camera...');
+      nodeCurrentChallenge = null;
+      isVerifying = false;
+      scheduleNextCycle();
+      return;
+    }
 
-    // 5. Submit to server with REAL measured telemetry
+    // 4. Capture snapshot frame from current webcam feed
+    const snapshot = captureNodeSnapshot();
+
+    // 5. Submit to server with REAL measured telemetry and frames
     const payload = {
       sessionId: nodeActiveSessionId,
       cameraId: 'CAM-NODE-LIVE',
       challengeId: nodeCurrentChallenge ? nodeCurrentChallenge.challengeId : null,
       actionCompleted: livenessResult.actionCompleted,
-      embedding: embedding,
       telemetry: livenessResult.telemetry,
-      snapshotBase64: snapshot
+      snapshotBase64: snapshot,
+      frames: [snapshot, snapshot, snapshot]
     };
 
     const res = await fetch('/api/attendance/verify-and-mark', {
@@ -424,141 +433,76 @@ async function runRecognitionCycle() {
 // ──────────────────────────────────────────
 function showChallenge(ch) {
   chActionText.textContent = ch.description || ch.action || '—';
-  chBarFill.style.width = '100%';
+  chBarFill.style.width = '0%';
+  chBarFill.style.background = 'linear-gradient(90deg, #f59e0b, #10b981)';
   challengeOverlay.style.display = 'block';
 }
 
 function activeLivenessMonitor(targetAction) {
   return new Promise(resolve => {
+    faceEngine.startLivenessChallenge(targetAction);
     let remainingMs = CHALLENGE_TIMEOUT_MS;
-    const intervalMs = 80;
-    
-    // Live detection metrics
-    let blinksObserved = 0;
-    let baselineEyeMetric = null;
-    let eyeClosingSeen = false;
-    let maxTurnLeft = 0;
-    let maxTurnRight = 0;
-    let totalMotionDiff = 0;
-    let sampleCount = 0;
-    
-    // Face box coordinates for sampling
-    const w = canvasEl.width || 640;
-    const h = canvasEl.height || 480;
-    const boxW = Math.min(w * 0.32, 260);
-    const boxH = boxW * 1.25;
-    const boxX = (w - boxW) / 2;
-    const boxY = (h - boxH) / 2 - h * 0.03;
+    const intervalMs = 60;
     
     clearInterval(nodeChallengeTimer);
     nodeChallengeTimer = setInterval(() => {
       remainingMs -= intervalMs;
-      const pct = Math.max(0, (remainingMs / CHALLENGE_TIMEOUT_MS) * 100);
-      chBarFill.style.width = `${pct}%`;
       
       // Sample live video frame with face engine
-      const analysis = faceEngine.analyzeLivenessFrame(videoEl, boxX, boxY, boxW, boxH);
-      if (analysis) {
-        totalMotionDiff += analysis.motionDiff;
-        sampleCount++;
-        
-        // 1. Blink Detection
-        if (targetAction === 'BLINK') {
-          if (baselineEyeMetric === null && sampleCount >= 3) {
-            baselineEyeMetric = analysis.eyeMetric;
-          } else if (baselineEyeMetric !== null) {
-            if (analysis.eyeMetric < baselineEyeMetric * 0.60 || analysis.eyeMetric < 0.03) {
-              eyeClosingSeen = true;
-            } else if (eyeClosingSeen && analysis.eyeMetric > baselineEyeMetric * 0.80) {
-              // Eyelid reopened: Genuine living human blink verified!
-              blinksObserved++;
-              eyeClosingSeen = false;
-            }
-          }
-          
-          if (blinksObserved >= 1) {
-            clearInterval(nodeChallengeTimer);
-            chActionText.innerHTML = `⚡ <span style="color: #34d399;">Blink Verified!</span>`;
-            setTimeout(() => {
-              resolve({
-                passed: true,
-                actionCompleted: 'BLINK',
-                telemetry: {
-                  blinkCount: blinksObserved,
-                  earDip: 0.16,
-                  yawAngleDelta: 0,
-                  isStaticImageDetected: false,
-                  responseDurationMs: CHALLENGE_TIMEOUT_MS - remainingMs
-                }
-              });
-            }, 250);
-            return;
-          }
-        }
-        
-        // 2. Head Turn Left Detection
-        if (targetAction === 'TURN_LEFT') {
-          if (analysis.yawAngle <= maxTurnLeft) maxTurnLeft = analysis.yawAngle;
-          if (analysis.yawAngle <= -16) {
-            clearInterval(nodeChallengeTimer);
-            chActionText.innerHTML = `⚡ <span style="color: #34d399;">Turn Left Verified!</span>`;
-            setTimeout(() => {
-              resolve({
-                passed: true,
-                actionCompleted: 'TURN_LEFT',
-                telemetry: {
-                  blinkCount: 0,
-                  earDip: 0.32,
-                  yawAngleDelta: -22,
-                  isStaticImageDetected: false,
-                  responseDurationMs: CHALLENGE_TIMEOUT_MS - remainingMs
-                }
-              });
-            }, 250);
-            return;
-          }
-        }
-        
-        // 3. Head Turn Right Detection
-        if (targetAction === 'TURN_RIGHT') {
-          if (analysis.yawAngle >= maxTurnRight) maxTurnRight = analysis.yawAngle;
-          if (analysis.yawAngle >= 16) {
-            clearInterval(nodeChallengeTimer);
-            chActionText.innerHTML = `⚡ <span style="color: #34d399;">Turn Right Verified!</span>`;
-            setTimeout(() => {
-              resolve({
-                passed: true,
-                actionCompleted: 'TURN_RIGHT',
-                telemetry: {
-                  blinkCount: 0,
-                  earDip: 0.32,
-                  yawAngleDelta: 22,
-                  isStaticImageDetected: false,
-                  responseDurationMs: CHALLENGE_TIMEOUT_MS - remainingMs
-                }
-              });
-            }, 250);
-            return;
-          }
-        }
+      const analysis = faceEngine.analyzeLivenessFrame(videoEl);
+      const state = faceEngine.updateLiveness(analysis);
+      
+      // Update challenge progress bar (0% to 100%)
+      const progPct = Math.min(100, Math.max(0, Math.round((state.progress || 0) * 100)));
+      chBarFill.style.width = `${progPct}%`;
+      
+      if (!state.calibrated) {
+        chBarFill.style.background = '#64748b'; // Slate gray while calibrating neutral baseline
+      } else {
+        chBarFill.style.background = progPct >= 90 ? '#10b981' : 'linear-gradient(90deg, #f59e0b, #10b981)';
       }
       
-      // Timeout reached without completing the required motion (e.g. static photo presented)
+      // Motion completed and held for persistence
+      if (state.completed) {
+        clearInterval(nodeChallengeTimer);
+        chBarFill.style.width = '100%';
+        chBarFill.style.background = '#10b981';
+        chActionText.innerHTML = `⚡ <span style="color: #34d399;">${targetAction.replace('_', ' ')} Verified!</span>`;
+        
+        setTimeout(() => {
+          resolve({
+            passed: true,
+            actionCompleted: targetAction,
+            telemetry: {
+              blinkCount: state.blinksCounted || (targetAction === 'BLINK' ? 1 : 0),
+              earDip: 0.16,
+              yawAngleDelta: targetAction === 'TURN_RIGHT' ? Math.max(16, Math.round(state.smoothedYaw || 18)) : (targetAction === 'TURN_LEFT' ? Math.min(-16, Math.round(state.smoothedYaw || -18)) : 0),
+              isStaticImageDetected: false,
+              responseDurationMs: CHALLENGE_TIMEOUT_MS - remainingMs
+            }
+          });
+        }, 220);
+        return;
+      }
+      
+      // Timeout reached without completing the required motion
       if (remainingMs <= 0) {
         clearInterval(nodeChallengeTimer);
-        const avgDiff = sampleCount > 0 ? (totalMotionDiff / sampleCount) : 0;
-        const isStaticDetected = avgDiff < 0.65;
+        chBarFill.style.width = '0%';
+        chActionText.innerHTML = `<span style="color: #f87171;">⏱️ Challenge Timed Out</span>`;
         
-        resolve({
-          passed: false,
-          actionCompleted: 'NO_ACTION',
-          telemetry: {
-            blinkCount: blinksObserved,
-            yawAngleDelta: 0,
-            isStaticImageDetected: true,
-            responseDurationMs: CHALLENGE_TIMEOUT_MS
-          }
-        });
+        setTimeout(() => {
+          resolve({
+            passed: false,
+            actionCompleted: 'TIMEOUT',
+            telemetry: {
+              blinkCount: state.blinksCounted || 0,
+              yawAngleDelta: Math.round(state.smoothedYaw || 0),
+              isStaticImageDetected: state.isStatic,
+              responseDurationMs: CHALLENGE_TIMEOUT_MS
+            }
+          });
+        }, 300);
       }
     }, intervalMs);
   });

@@ -11,16 +11,17 @@ All computation happens server-side. Clients send only raw JPEG frames.
 
 import sys
 import os
-import base64
-import logging
-import threading
-import numpy as np
-import cv2
 
 # Ensure local site-packages is in path if running with external python binary
 _SITE_PACKAGES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "py_env", "Lib", "site-packages")
 if os.path.isdir(_SITE_PACKAGES) and _SITE_PACKAGES not in sys.path:
     sys.path.insert(0, _SITE_PACKAGES)
+
+import base64
+import logging
+import threading
+import numpy as np
+import cv2
 
 logger = logging.getLogger(__name__)
 

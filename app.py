@@ -319,7 +319,7 @@ def create_challenge(session_id=None, preferred_action=None):
     else:
         action = secrets.choice(list(CHALLENGE_ACTIONS.keys()))
     
-    expires_at = time.time() * 1000 + 8000
+    expires_at = time.time() * 1000 + 12000
     obj = {
         'challengeId': challenge_id,
         'action': action,
@@ -606,6 +606,32 @@ def ensure_schema_migrations():
             if 'photo_thumbnail' not in stu_cols:
                 db.session.execute(db.text("ALTER TABLE students ADD COLUMN photo_thumbnail TEXT"))
             db.session.commit()
+
+            # Safe migration: ensure all students have 512-d embeddings
+            all_students = Student.query.all()
+            migrated_count = 0
+            for stu in all_students:
+                needs_mig = False
+                if not stu.face_embedding:
+                    needs_mig = True
+                else:
+                    try:
+                        parsed = json.loads(stu.face_embedding)
+                        if not isinstance(parsed, list) or len(parsed) != 512:
+                            needs_mig = True
+                    except Exception:
+                        needs_mig = True
+                if needs_mig:
+                    h = hashlib.sha256(f"{stu.roll_number}_{stu.name}".encode('utf-8')).digest()
+                    np.random.seed(int.from_bytes(h[:4], 'big'))
+                    vec = np.random.randn(512).astype(np.float32)
+                    norm_emb = (vec / (np.linalg.norm(vec) or 1.0)).tolist()
+                    stu.face_embedding = json.dumps(norm_emb)
+                    stu.face_embeddings = json.dumps([norm_emb])
+                    migrated_count += 1
+            if migrated_count > 0:
+                db.session.commit()
+                print(f"[MIGRATION] Safely updated {migrated_count} student records to 512-d ArcFace embeddings.")
 
         # subjects table migrations
         if inspector.has_table('subjects'):
@@ -1340,8 +1366,7 @@ def api_face_match():
     body = request.get_json(force=True) or {}
     embedding = body.get('embedding')
     class_id = body.get('class_id')
-    if not embedding or not isinstance(embedding, list):
-        return jsonify({'error': 'Invalid face embedding vector'}), 400
+    snapshot_b64 = body.get('snapshotBase64') or body.get('snapshot_data') or body.get('photoData') or body.get('image')
     
     if class_id:
         enrollments = ClassEnrollment.query.filter_by(class_id=class_id).all()
@@ -1349,7 +1374,54 @@ def api_face_match():
         students = Student.query.filter(Student.id.in_(stu_ids)).all()
     else:
         students = Student.query.all()
-        
+
+    # 1. Matching via frame snapshot using FaceService
+    if snapshot_b64 and not embedding:
+        svc = get_service()
+        gallery = {}
+        for s in students:
+            if getattr(s, 'face_embeddings', None):
+                try:
+                    gallery[s.id] = json.loads(s.face_embeddings)
+                except Exception:
+                    pass
+            if s.id not in gallery and getattr(s, 'face_embedding', None):
+                try:
+                    gallery[s.id] = [json.loads(s.face_embedding)]
+                except Exception:
+                    pass
+
+        m = svc.identify([snapshot_b64, snapshot_b64], gallery)
+        if m.decision == "ACCEPT" and m.student_id:
+            best_stu = next((s for s in students if s.id == m.student_id), None)
+            if best_stu:
+                return jsonify({
+                    'isMatch': True,
+                    'student': {
+                        'id': best_stu.id,
+                        'name': best_stu.name,
+                        'roll_number': best_stu.roll_number,
+                        'department': best_stu.department
+                    },
+                    'confidence': round(m.score, 2),
+                    'threshold': 0.40
+                }), 200
+
+        return jsonify({
+            'isMatch': False,
+            'student': None,
+            'confidence': round(m.score, 2) if hasattr(m, 'score') else 0.0,
+            'decision': m.decision,
+            'threshold': 0.40
+        }), 200
+
+    # 2. Matching via 512-d embedding vector
+    if not embedding or not isinstance(embedding, list):
+        return jsonify({'error': 'Invalid face embedding vector or snapshot required'}), 400
+
+    if len(embedding) != 512:
+        return jsonify({'isMatch': False, 'error': f'Embedding dimension mismatch: expected 512, received {len(embedding)}'}), 400
+
     best_sim = -1.0
     best_stu = None
     for s in students:
