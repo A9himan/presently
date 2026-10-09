@@ -23,6 +23,8 @@ import threading
 import numpy as np
 import cv2
 
+os.environ["INSIGHTFACE_HOME"] = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data", "insightface")
+
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------

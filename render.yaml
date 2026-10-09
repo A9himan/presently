@@ -9,8 +9,8 @@ services:
     name: presently-attendance
     env: python
     plan: free
-    buildCommand: pip install -r requirements.txt
-    startCommand: gunicorn app:app --workers 1 --threads 4 --bind 0.0.0.0:$PORT
+    buildCommand: pip install -r requirements.txt && python -c "import os; os.environ['INSIGHTFACE_HOME'] = os.path.join(os.getcwd(), 'data', 'insightface'); from insightface.app import FaceAnalysis; FaceAnalysis(name='buffalo_s', providers=['CPUExecutionProvider']).prepare(ctx_id=-1, det_size=(640, 640))"
+    startCommand: gunicorn app:app --workers 1 --threads 4 --timeout 120 --bind 0.0.0.0:$PORT
     envVars:
       - key: PYTHON_VERSION
         value: 3.11.9
