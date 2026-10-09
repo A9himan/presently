@@ -109,7 +109,8 @@ function renderFacultyRosterTable() {
 
   const recordMap = new Map();
   for (const r of facultyRecords) {
-    recordMap.set(r.student_id, r);
+    const sId = r.student_id || r.studentId;
+    if (sId) recordMap.set(sId, r);
   }
 
   let presentCount = 0;
@@ -148,10 +149,13 @@ function renderFacultyRosterTable() {
     let methodText = '--';
 
     if (rec) {
-      timeText = new Date(rec.marked_at).toLocaleTimeString();
-      challengeText = `<span class="badge badge-purple">${rec.challenge_type}</span>`;
-      confText = `${Math.round(rec.match_confidence * 100)}%`;
-      methodText = `<span class="badge badge-blue">Face + Liveness</span>`;
+      const markedTime = rec.marked_at || rec.markedAt;
+      timeText = markedTime ? new Date(markedTime).toLocaleTimeString() : '--:--';
+      const cType = rec.challenge_type || rec.challengeType || 'VERIFIED';
+      challengeText = `<span class="badge badge-purple">${cType}</span>`;
+      const conf = rec.match_confidence ?? rec.matchConfidence ?? 0.95;
+      confText = `${Math.round(conf * 100)}%`;
+      methodText = `<span class="badge badge-blue">${rec.verification_method || rec.verificationMethod || 'Face + Liveness'}</span>`;
     }
 
     const statusBadge = isPresent
