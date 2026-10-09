@@ -1,0 +1,48 @@
+# Python Virtual Environments
+py_env/
+.venv/
+venv/
+env/
+ENV/
+*.venv
+
+# Duplicate Nested Folder
+presently/
+
+# Python Bytecode & Cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.pytest_cache/
+
+# Database & Local Data
+data/*.sqlite*
+data/*.db*
+instance/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.db
+
+# Node.js
+node_modules/
+npm-debug.log*
+
+# Environment & Credentials
+.env
+.env.local
+*.pem
+*.key
+
+# IDE & OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Large / Temporary Exports
+*.log
+scratch/
+*.zip
+

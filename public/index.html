@@ -1,0 +1,993 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Presently : Attendance That Takes Itself</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🎯</text></svg>">
+</head>
+<body>
+
+  <!-- Header / Navigation Bar -->
+  <header>
+    <div class="nav-container">
+      <div class="logo-group">
+        <div class="logo-badge">P</div>
+        <div class="logo-text">
+          <h1>Presently</h1>
+          <p>Attendance That Takes Itself</p>
+        </div>
+      </div>
+
+      <nav class="nav-tabs">
+        <button class="tab-btn active" data-tab="kiosk">
+          <span>📹</span> Camera Terminal
+        </button>
+        <button class="tab-btn" data-tab="faculty">
+          <span>👨‍🏫</span> Faculty Live Monitor
+        </button>
+        <button class="tab-btn" data-tab="snapshots">
+          <span>🛡️</span> 72h Snapshot Vault
+        </button>
+        <button class="tab-btn" data-tab="admin">
+          <span>🏫</span> Admin Portal
+        </button>
+        <button class="tab-btn" data-tab="cameras">
+          <span>📡</span> Camera Hub
+        </button>
+        <button class="tab-btn" data-tab="lms">
+          <span>⚡</span> LMS Webhook & API
+        </button>
+      </nav>
+
+      <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+        <!-- Prominent Edge Node launcher for Judges -->
+        <a href="/node" target="_blank" class="btn btn-outline btn-sm" style="border-color: #10b981; color: #6ee7b7; font-weight: 700; background: rgba(16, 185, 129, 0.1);">
+          <span>📹</span> Launch Camera Node ↗
+        </a>
+
+        <!-- Authenticated User Profile -->
+        <div id="nav-user-container" style="display: none; align-items: center; gap: 0.5rem; background: rgba(255, 255, 255, 0.05); padding: 0.3rem 0.65rem; border-radius: 8px; border: 1px solid var(--border-color);">
+          <div style="display: flex; flex-direction: column; text-align: right;">
+            <span id="nav-user-name" style="font-size: 0.8rem; font-weight: 700; color: #ffffff;">Dr. Sarah Chen</span>
+            <span id="nav-user-role" class="badge badge-purple" style="font-size: 0.65rem; padding: 1px 4px; align-self: flex-end;">FACULTY</span>
+          </div>
+          <button id="btn-logout" class="btn btn-outline btn-sm" style="padding: 0.2rem 0.5rem; font-size: 0.7rem;" title="Logout">
+            Logout
+          </button>
+        </div>
+
+        <div class="nav-status">
+          <span class="status-dot"></span>
+          <span id="hub-status-text">Hub Active • 4 Rooms</span>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Area -->
+  <main>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 1: CAMERA KIOSK / EDGE ROOM TERMINAL                 -->
+    <!-- ======================================================== -->
+    <section id="view-kiosk" class="view-section active">
+      <div class="kiosk-container">
+        
+        <!-- Left: Live Video Feed & Challenge HUD -->
+        <div>
+          <div class="camera-feed-box">
+            <video id="kiosk-video" autoplay playsinline muted style="display: none;"></video>
+            <canvas id="kiosk-canvas" width="640" height="480"></canvas>
+
+            <div class="camera-overlay">
+              <div class="overlay-top">
+                <div class="camera-badge">
+                  <span class="status-dot"></span>
+                  <span id="kiosk-camera-name">CAM-ROOM-101 • Hall 101</span>
+                </div>
+                <div class="camera-badge" style="background: rgba(30, 41, 59, 0.85); border-color: rgba(99, 102, 241, 0.4);">
+                  <span id="kiosk-session-badge">CS101 - Section A (Room 101)</span>
+                </div>
+              </div>
+
+              <!-- Facial Tracking Reticle -->
+              <div id="target-reticle" class="target-reticle"></div>
+
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 0.75rem; color: #94a3b8; background: rgba(0,0,0,0.6); padding: 4px 10px; border-radius: 6px;">
+                <span>Autonomous Facial Recognition</span>
+                <span id="kiosk-feed-status">Camera Feed: Live</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Result Toast Container -->
+          <div id="kiosk-result-container"></div>
+        </div>
+
+        <!-- Right: Camera Controls & Device Selector -->
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>📷</span> Camera Settings & Device
+              </div>
+              <div style="display: flex; gap: 0.35rem;">
+                <button id="btn-mode-virtual" class="btn btn-outline btn-sm active">Simulation</button>
+                <button id="btn-mode-webcam" class="btn btn-outline btn-sm">Live Webcam</button>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label class="form-label">Active Camera / Source</label>
+              <select id="kiosk-camera-select" class="form-select"></select>
+              <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.25rem; display: block;">
+                Select from connected webcams or classroom terminal cameras.
+              </small>
+            </div>
+
+            <div id="kiosk-student-select-group" class="form-group">
+              <label class="form-label">Student in Frame</label>
+              <select id="kiosk-student-select" class="form-select"></select>
+            </div>
+
+            <button id="btn-mark-attendance" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem; height: 44px; font-weight: 700; font-size: 0.95rem;">
+              <span>📸</span> Mark Attendance
+            </button>
+          </div>
+
+          <!-- Feature Specs Card -->
+          <div class="card" style="background: rgba(17, 24, 39, 0.6);">
+            <div style="font-size: 0.8rem; display: flex; flex-direction: column; gap: 0.4rem;">
+              <div>✅ <strong>One Mark Per Session:</strong> Strict deduplication prevents double-marking.</div>
+              <div>⚡ <strong>Instant LMS Push:</strong> Attendance pushed to LMS within 20ms via webhook.</div>
+              <div>🔒 <strong>72h Auto-Deletion:</strong> Snapshots automatically purge after 72 hours.</div>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 2: FACULTY REAL-TIME ATTENDANCE MONITOR              -->
+    <!-- ======================================================== -->
+    <section id="view-faculty" class="view-section">
+      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        
+        <!-- Top Toolbar -->
+        <div class="card" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+          <div style="display: flex; align-items: center; gap: 1rem; flex-wrap: wrap;">
+            <div style="min-width: 260px;">
+              <label class="form-label">Subject & Class Section</label>
+              <select id="faculty-class-select" class="form-select"></select>
+            </div>
+            <div>
+              <div id="faculty-session-status-badge" style="margin-bottom: 0.25rem;"></div>
+              <div id="faculty-session-info" style="font-size: 0.8rem; color: var(--text-muted);"></div>
+            </div>
+          </div>
+
+          <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
+            <div style="background: rgba(139, 92, 246, 0.12); border: 1px solid rgba(139, 92, 246, 0.35); border-radius: 8px; padding: 0.4rem 0.8rem; display: flex; align-items: center; gap: 0.5rem;">
+              <span class="status-dot" style="background: #a78bfa;"></span>
+              <span style="font-size: 0.8rem; font-weight: 700; color: #c4b5fd;">Timetable Orchestrated</span>
+            </div>
+            <button id="faculty-btn-pdf" class="btn btn-primary" style="display: inline-flex;">
+              <span>📄</span> Export Official PDF Dossier
+            </button>
+          </div>
+        </div>
+
+        <!-- Real-Time KPI Stats -->
+        <div class="grid-4">
+          <div class="stat-kpi">
+            <span class="stat-label">Total Enrolled</span>
+            <span id="kpi-faculty-enrolled" class="stat-value">12</span>
+            <span class="stat-meta">Class Roster Quorum</span>
+          </div>
+          <div class="stat-kpi green">
+            <span class="stat-label">Present (Verified)</span>
+            <span id="kpi-faculty-present" class="stat-value">2</span>
+            <span class="stat-meta">Passed Anti-Proxy Challenge</span>
+          </div>
+          <div class="stat-kpi amber">
+            <span class="stat-label">Absent Students</span>
+            <span id="kpi-faculty-absent" class="stat-value">10</span>
+            <span class="stat-meta">Pending Arrival</span>
+          </div>
+          <div class="stat-kpi purple">
+            <span class="stat-label">Attendance Rate</span>
+            <span id="kpi-faculty-rate" class="stat-value">16.7%</span>
+            <span class="stat-meta">Real-Time Ratio</span>
+          </div>
+        </div>
+
+        <!-- Live Roster Table & Real-Time Stream -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">
+                <span>📋</span> Live Attendance Ledger
+              </div>
+              <div class="card-subtitle">Streams in real time via Server-Sent Events as students pass camera</div>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+              <input id="faculty-search-input" type="text" class="form-input" placeholder="Search roll no or name..." style="width: 220px; padding: 0.4rem 0.75rem; font-size: 0.8rem;">
+              <select id="faculty-filter-status" class="form-select" style="width: 140px; padding: 0.4rem 0.75rem; font-size: 0.8rem;">
+                <option value="ALL">All Students</option>
+                <option value="PRESENT">Present Only</option>
+                <option value="ABSENT">Absent Only</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 40px;">#</th>
+                  <th>Roll Number</th>
+                  <th>Student Name</th>
+                  <th>Status</th>
+                  <th>Marked Time</th>
+                  <th>Anti-Proxy Action</th>
+                  <th>Confidence</th>
+                </tr>
+              </thead>
+              <tbody id="faculty-roster-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 3: 72-HOUR SNAPSHOT VAULT & PRIVACY AUDIT            -->
+    <!-- ======================================================== -->
+    <section id="view-snapshots" class="view-section">
+      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        
+        <!-- Privacy Guarantee Banner -->
+        <div class="card" style="background: linear-gradient(145deg, #1e293b, #0f172a); border-left: 4px solid var(--accent-blue);">
+          <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 1rem;">
+            <div>
+              <h3 style="font-size: 1.15rem; font-weight: 700; display: flex; align-items: center; gap: 0.5rem;">
+                <span>🛡️</span> Privacy-First Snapshot Retention Lifecycle
+              </h3>
+              <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.35rem; max-width: 800px;">
+                Only 128-dimensional mathematical face embeddings are stored long-term in the database. Raw photos are discarded immediately after enrollment. Verification audit snapshots are strictly preserved for 72 hours for faculty dispute review, and then automatically wiped.
+              </p>
+            </div>
+
+            <div style="display: flex; gap: 0.75rem; align-items: center;">
+              <button id="btn-manual-purge" class="btn btn-outline btn-sm">
+                <span>🧹</span> Purge Expired Now
+              </button>
+              <button id="btn-timewarp" class="btn btn-primary btn-sm">
+                <span>⏩</span> Simulate +72h Time Warp & Purge
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Snapshots Gallery -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">
+                <span>📸</span> Verification Snapshot Audit Gallery
+              </div>
+              <div class="card-subtitle">Live countdown to 72-hour automated deletion policy</div>
+            </div>
+          </div>
+
+          <div id="snapshots-grid" class="snapshot-grid"></div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 4: ADMINISTRATOR PORTAL                              -->
+    <!-- ======================================================== -->
+    <section id="view-admin" class="view-section">
+      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        
+        <!-- Admin Overview KPIs -->
+        <div class="grid-4">
+          <div class="stat-kpi">
+            <span class="stat-label">Total Students</span>
+            <span id="admin-kpi-students" class="stat-value">12</span>
+            <span class="stat-meta">Embeddings Enrolled</span>
+          </div>
+          <div class="stat-kpi green">
+            <span class="stat-label">Active Classes</span>
+            <span id="admin-kpi-classes" class="stat-value">4</span>
+            <span class="stat-meta">Assigned Rooms</span>
+          </div>
+          <div class="stat-kpi amber">
+            <span class="stat-label">Academic Subjects</span>
+            <span id="admin-kpi-subjects" class="stat-value">4</span>
+            <span class="stat-meta">Curriculum Catalog</span>
+          </div>
+          <div class="stat-kpi" style="border-top-color: #6366f1;">
+            <span class="stat-label">Faculty Staff</span>
+            <span id="admin-kpi-teachers" class="stat-value">3</span>
+            <span class="stat-meta">Active Instructors</span>
+          </div>
+          <div class="stat-kpi purple">
+            <span class="stat-label">Camera Nodes</span>
+            <span id="admin-kpi-cameras" class="stat-value">4</span>
+            <span class="stat-meta">Central Hub Online</span>
+          </div>
+        </div>
+
+        <!-- Faculty Members & Teaching Staff Card -->
+        <div class="card">
+          <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+              <div class="card-title">
+                <span>👨‍🏫</span> Faculty Members & Teachers
+              </div>
+              <div class="card-subtitle">
+                Manage teaching staff, auto-generated sequential login IDs (<code style="color: #a5b4fc;">F1, F2, F3...</code>), and credentials.
+              </div>
+            </div>
+            <button id="btn-open-add-teacher" class="btn btn-primary btn-sm">
+              <span>+</span> Add Teacher
+            </button>
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Login ID</th>
+                  <th>Faculty Name</th>
+                  <th>Email</th>
+                  <th>Department</th>
+                  <th>Designation</th>
+                  <th>Password</th>
+                  <th>Subjects</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="admin-teachers-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Subjects & Classes Split -->
+        <div class="grid-2">
+          
+          <!-- Subjects Card -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>📚</span> Academic Subjects
+              </div>
+              <button id="btn-open-add-subject" class="btn btn-primary btn-sm">
+                <span>+</span> Add Subject
+              </button>
+            </div>
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Code</th>
+                    <th>Subject Name</th>
+                    <th>Department</th>
+                    <th>Assigned Faculty</th>
+                    <th>Credits</th>
+                    <th style="text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-subjects-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+          <!-- Classes Card -->
+          <div class="card">
+            <div class="card-header">
+              <div class="card-title">
+                <span>🏛️</span> Classes Under Subjects
+              </div>
+              <button id="btn-open-add-class" class="btn btn-primary btn-sm">
+                <span>+</span> Add Class
+              </button>
+            </div>
+            <div class="table-responsive">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Subject</th>
+                    <th>Class / Section</th>
+                    <th>Room</th>
+                    <th>Schedule</th>
+                    <th>Faculty</th>
+                    <th>Roster</th>
+                    <th style="text-align: right;">Action</th>
+                  </tr>
+                </thead>
+                <tbody id="admin-classes-tbody"></tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+        <!-- Weekly Institutional Timetable Card (Admin Orchestrated) -->
+        <div class="card">
+          <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+              <div class="card-title">
+                <span>📅</span> Weekly Institutional Timetable (Admin Orchestrated)
+              </div>
+              <div class="card-subtitle">
+                Each class has specific subjects scheduled by day & time. Attendance in camera automatically tracks the scheduled subject and assigned teacher.
+              </div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <select id="tt-filter-day" class="form-select" style="width: 140px; padding: 0.35rem 0.6rem; font-size: 0.8rem;">
+                <option value="">All Days</option>
+                <option value="Monday">Monday</option>
+                <option value="Tuesday">Tuesday</option>
+                <option value="Wednesday">Wednesday</option>
+                <option value="Thursday">Thursday</option>
+                <option value="Friday">Friday</option>
+                <option value="Saturday">Saturday</option>
+              </select>
+              <button id="btn-open-add-timetable" class="btn btn-primary btn-sm">
+                <span>+</span> Add Timetable Slot
+              </button>
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Day</th>
+                  <th>Time Slot</th>
+                  <th>Class / Section</th>
+                  <th>Subject</th>
+                  <th>Assigned Faculty</th>
+                  <th>Room</th>
+                  <th>Status</th>
+                  <th style="text-align: right;">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="admin-timetable-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <!-- Student Face Enrollment Studio -->
+        <div class="card">
+          <div class="card-header" style="flex-wrap: wrap; gap: 0.75rem;">
+            <div>
+              <div class="card-title">
+                <span>🎓</span> Student Face Enrollment Studio
+              </div>
+              <div class="card-subtitle">Privacy Guarantee: Only 128-d vectors stored; raw photos purged immediately</div>
+            </div>
+            <div style="display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap;">
+              <button id="btn-remove-all-students" class="btn btn-danger btn-sm">
+                <span>🗑️</span> Remove All Existing Students
+              </button>
+              <button id="btn-open-add-student" class="btn btn-primary btn-sm">
+                <span>+</span> Enroll New Student
+              </button>
+            </div>
+          </div>
+
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th style="width: 40px;">#</th>
+                  <th>Roll Number</th>
+                  <th>Student Name</th>
+                  <th>Email Address</th>
+                  <th>Department</th>
+                  <th>Biometric Privacy Status</th>
+                  <th style="text-align: right;">Action</th>
+                </tr>
+              </thead>
+              <tbody id="admin-students-tbody"></tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 5: CENTRAL HUB & MULTI-ROOM CAMERA SCALE             -->
+    <!-- ======================================================== -->
+    <section id="view-cameras" class="view-section">
+      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        
+        <div class="card" style="background: linear-gradient(145deg, #111827, #1f293d);">
+          <div class="card-title" style="margin-bottom: 0.5rem;">
+            <span>📡</span> Central Hub Multi-Room Camera Architecture
+          </div>
+          <p style="font-size: 0.85rem; color: var(--text-muted); max-width: 900px;">
+            Presently scales across unlimited lecture halls and laboratories. Camera devices connect to this central hub via authenticated edge endpoints. Each terminal stream handles face landmark tracking, anti-proxy liveness challenges, and pushes attendance to the central database.
+          </p>
+        </div>
+
+        <div id="admin-cameras-grid" class="grid-4"></div>
+
+      </div>
+    </section>
+
+    <!-- ======================================================== -->
+    <!-- VIEW 6: LMS WEBHOOK & REST API DISPATCHER                -->
+    <!-- ======================================================== -->
+    <section id="view-lms" class="view-section">
+      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+        
+        <!-- LMS Configuration Card -->
+        <div class="card">
+          <div class="card-header">
+            <div>
+              <div class="card-title">
+                <span>⚡</span> LMS Webhook & REST API Integration
+              </div>
+              <div class="card-subtitle">Each attendance mark is pushed instantly to your LMS with HMAC-SHA256 signatures</div>
+            </div>
+            <button id="btn-lms-test-ping" class="btn btn-primary btn-sm">
+              <span>🚀</span> Send Test Webhook Ping
+            </button>
+          </div>
+
+          <form id="form-lms-config" style="display: grid; grid-template-columns: 1.5fr 1fr auto; gap: 1rem; align-items: end;">
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">LMS Webhook Target URL (Canvas / Moodle / Custom)</label>
+              <input id="lms-config-url" type="text" class="form-input" placeholder="/api/mock-lms/webhook">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label class="form-label">HMAC-SHA256 Signing Secret</label>
+              <input id="lms-config-secret" type="password" class="form-input" placeholder="Secret Key">
+            </div>
+            <button type="submit" class="btn btn-outline" style="height: 40px;">Save Settings</button>
+          </form>
+        </div>
+
+        <!-- Live LMS Ingestion Stream -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>📥</span> Live LMS Webhook Ingestion Feed
+            </div>
+            <button id="btn-refresh-lms-feed" class="btn btn-outline btn-sm">
+              <span>🔄</span> Refresh Feed
+            </button>
+          </div>
+
+          <div id="lms-feed-container"></div>
+        </div>
+
+        <!-- REST API Endpoints Specification -->
+        <div class="card">
+          <div class="card-header">
+            <div class="card-title">
+              <span>🔌</span> REST API Documentation & Endpoints
+            </div>
+          </div>
+          <div class="table-responsive">
+            <table>
+              <thead>
+                <tr>
+                  <th>Method</th>
+                  <th>Endpoint</th>
+                  <th>Description</th>
+                  <th>Payload / Query</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td><span class="badge badge-green">POST</span></td>
+                  <td><code>/api/attendance/verify-and-mark</code></td>
+                  <td>Submit facial recognition & anti-proxy challenge response</td>
+                  <td><code>{ sessionId, cameraId, embedding, challengeId, actionCompleted }</code></td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-blue">GET</span></td>
+                  <td><code>/api/export/pdf?sessionId={id}</code></td>
+                  <td>Generate & download official A4 attendance PDF dossier</td>
+                  <td><code>sessionId</code></td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-blue">GET</span></td>
+                  <td><code>/api/challenge/new?sessionId={id}</code></td>
+                  <td>Request dynamic anti-proxy challenge token</td>
+                  <td><code>sessionId, action</code></td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-blue">GET</span></td>
+                  <td><code>/api/sessions/active</code></td>
+                  <td>Fetch currently active lecture session and live stats</td>
+                  <td><code>classId (optional)</code></td>
+                </tr>
+                <tr>
+                  <td><span class="badge badge-green">POST</span></td>
+                  <td><code>/api/students/enroll</code></td>
+                  <td>Privacy face enrollment (extracts 128-d vector, purges photo)</td>
+                  <td><code>{ roll_number, name, email, department }</code></td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+  </main>
+
+  <!-- ======================================================== -->
+  <!-- MODALS                                                   -->
+  <!-- ======================================================== -->
+
+  <!-- Modal: Add Faculty Member -->
+  <div id="modal-add-teacher" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="card-header">
+        <h3 class="card-title">Add Faculty Member</h3>
+        <button class="btn btn-outline btn-sm btn-close-modal">✕</button>
+      </div>
+      <form id="form-add-teacher">
+        <div style="background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.35); border-radius: 8px; padding: 0.85rem 1rem; margin-bottom: 1.25rem; display: flex; align-items: center; justify-content: space-between;">
+          <div>
+            <div style="font-size: 0.75rem; color: #a5b4fc; text-transform: uppercase; font-weight: 700; letter-spacing: 0.5px;">Auto-Assigned Username</div>
+            <div style="font-size: 0.82rem; color: var(--text-muted); margin-top: 0.15rem;">Sequential Teacher ID (starts at F1)</div>
+          </div>
+          <span id="new-teacher-username-preview" class="badge" style="font-size: 1.15rem; padding: 0.35rem 0.9rem; font-weight: 800; background: #4f46e5; color: #fff; border: 1px solid #6366f1;">F...</span>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input id="tch-name-input" type="text" class="form-input" required placeholder="e.g. Dr. Rajesh Sharma">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Email Address</label>
+          <input id="tch-email-input" type="email" class="form-input" required placeholder="e.g. rajesh.sharma@university.edu">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Department</label>
+          <input id="tch-dept-input" type="text" class="form-input" required value="Computer Science" placeholder="Computer Science">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Designation</label>
+          <select id="tch-desig-select" class="form-select">
+            <option value="Assistant Professor">Assistant Professor</option>
+            <option value="Associate Professor">Associate Professor</option>
+            <option value="Professor">Professor</option>
+            <option value="Lecturer">Lecturer</option>
+            <option value="Lab Instructor">Lab Instructor</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Set Login Password</label>
+          <input id="tch-password-input" type="text" class="form-input" required value="123" placeholder="Enter password (e.g. 123)">
+          <small style="color: var(--text-muted); font-size: 0.75rem; margin-top: 0.25rem; display: block;">
+            The teacher will use their assigned username (<strong id="pwd-hint-username" style="color: #a5b4fc;">F1</strong>) and this password to log in.
+          </small>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+          <button type="button" class="btn btn-outline btn-close-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Faculty Account</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Subject -->
+  <div id="modal-add-subject" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="card-header">
+        <h3 class="card-title">Create New Academic Subject</h3>
+        <button class="btn btn-outline btn-sm btn-close-modal">✕</button>
+      </div>
+      <form id="form-add-subject">
+        <div class="form-group">
+          <label class="form-label">Subject Code (e.g. CS204)</label>
+          <input id="sub-code-input" type="text" class="form-input" required placeholder="CS204">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Subject Name</label>
+          <input id="sub-name-input" type="text" class="form-input" required placeholder="Data Structures & Algorithms">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Department</label>
+          <input id="sub-dept-input" type="text" class="form-input" required placeholder="Computer Science">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Assign Faculty Member</label>
+          <select id="sub-teacher-select" class="form-select"></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Credits</label>
+          <input id="sub-credits-input" type="number" class="form-input" value="4" min="1" max="6">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+          <button type="button" class="btn btn-outline btn-close-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Subject</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Weekly Timetable Slot -->
+  <div id="modal-add-timetable" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="card-header">
+        <h3 class="card-title">Schedule Weekly Timetable Slot</h3>
+        <button class="btn btn-outline btn-sm btn-close-modal">✕</button>
+      </div>
+      <form id="form-add-timetable">
+        <div class="form-group">
+          <label class="form-label">Day of Week</label>
+          <select id="tt-day-select" class="form-select" required>
+            <option value="Monday">Monday</option>
+            <option value="Tuesday">Tuesday</option>
+            <option value="Wednesday">Wednesday</option>
+            <option value="Thursday">Thursday</option>
+            <option value="Friday">Friday</option>
+            <option value="Saturday">Saturday</option>
+          </select>
+        </div>
+        <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem;">
+          <div class="form-group">
+            <label class="form-label">Start Time</label>
+            <input id="tt-start-input" type="time" class="form-input" required value="09:00">
+          </div>
+          <div class="form-group">
+            <label class="form-label">End Time</label>
+            <input id="tt-end-input" type="time" class="form-input" required value="10:30">
+          </div>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Class Cohort / Section</label>
+          <select id="tt-class-select" class="form-select" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Specific Subject for this Slot</label>
+          <select id="tt-subject-select" class="form-select" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Assigned Faculty In-Charge</label>
+          <select id="tt-teacher-select" class="form-select" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Assigned Room / Lab</label>
+          <input id="tt-room-input" type="text" class="form-input" required value="Room 101" placeholder="Room 101">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+          <button type="button" class="btn btn-outline btn-close-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save to Timetable</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Add Class -->
+  <div id="modal-add-class" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="card-header">
+        <h3 class="card-title">Create Class Under Subject</h3>
+        <button class="btn btn-outline btn-sm btn-close-modal">✕</button>
+      </div>
+      <form id="form-add-class">
+        <div class="form-group">
+          <label class="form-label">Select Subject</label>
+          <select id="modal-class-subject-select" class="form-select" required></select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Class / Section Name</label>
+          <input id="cls-name-input" type="text" class="form-input" required placeholder="Section C - Afternoon Batch">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Assigned Room</label>
+          <input id="cls-room-input" type="text" class="form-input" required placeholder="Hall 204">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Class Schedule</label>
+          <input id="cls-schedule-input" type="text" class="form-input" placeholder="Mon / Wed 02:00 - 03:30 PM">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Faculty Name</label>
+          <input id="cls-faculty-input" type="text" class="form-input" required value="Er. Gagandeep Kaur" placeholder="Er. Gagandeep Kaur">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Faculty Email</label>
+          <input id="cls-email-input" type="email" class="form-input" value="gagandeep.kaur@university.edu" placeholder="gagandeep.kaur@university.edu">
+        </div>
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+          <button type="button" class="btn btn-outline btn-close-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Create Class</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Enroll Student -->
+  <div id="modal-add-student" class="modal-backdrop">
+    <div class="modal-box">
+      <div class="card-header">
+        <h3 class="card-title">Enroll Student (Privacy-Preserving)</h3>
+        <button class="btn btn-outline btn-sm btn-close-modal">✕</button>
+      </div>
+      <form id="form-add-student">
+        <div class="form-group">
+          <label class="form-label">Student Roll Number</label>
+          <input id="stu-roll-input" type="text" class="form-input" required placeholder="CS-2024-045">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Full Name</label>
+          <input id="stu-name-input" type="text" class="form-input" required placeholder="Maya Lin">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Campus Email</label>
+          <input id="stu-email-input" type="email" class="form-input" required placeholder="maya.lin@campus.edu">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Department</label>
+          <input id="stu-dept-input" type="text" class="form-input" value="Computer Science">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Student Face Photo (Upload Image for Recognition)</label>
+          <input id="stu-photo-input" type="file" accept="image/*" class="form-input">
+          <div id="stu-photo-preview-wrap" style="display: none; margin-top: 0.75rem; text-align: center; background: rgba(0,0,0,0.3); padding: 0.75rem; border-radius: 8px; border: 1px solid var(--border-color);">
+            <div style="font-size: 0.75rem; color: #94a3b8; margin-bottom: 0.5rem; font-weight: 600;">EXTRACTED BIOMETRIC FACE PREVIEW</div>
+            <canvas id="stu-photo-canvas" width="130" height="130" style="border-radius: 8px; border: 2px solid #10b981; box-shadow: 0 4px 12px rgba(16,185,129,0.2);"></canvas>
+            <div id="stu-photo-status" style="font-size: 0.75rem; color: #34d399; margin-top: 0.4rem; font-weight: 600;">
+              ✅ Face detected • 128-d Vector Extracted
+            </div>
+          </div>
+        </div>
+
+        <div style="background: rgba(59, 130, 246, 0.1); border: 1px solid rgba(59, 130, 246, 0.3); border-radius: 8px; padding: 0.75rem; margin-top: 0.5rem; font-size: 0.75rem; color: #93c5fd;">
+          🔒 <strong>Privacy Guarantee:</strong> A 128-dimensional mathematical vector embedding will be extracted from the uploaded image for attendance matching.
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; gap: 0.5rem; margin-top: 1.25rem;">
+          <button type="button" class="btn btn-outline btn-close-modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Extract Embedding & Enroll</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <!-- Modal: Class Enrolled Students Roster -->
+  <div id="modal-class-roster" class="modal-backdrop">
+    <div class="modal-box" style="max-width: 800px;">
+      <div class="card-header">
+        <div>
+          <h3 id="modal-roster-class-title" class="card-title">Class Roster</h3>
+          <p id="modal-roster-class-sub" style="font-size: 0.8rem; color: var(--text-muted);">Enrolled students for this class</p>
+        </div>
+        <button class="btn btn-outline btn-sm btn-close-modal">✕</button>
+      </div>
+
+      <!-- Quick Add Student to Class Section -->
+      <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid var(--border-color); border-radius: 8px; padding: 0.75rem; margin-bottom: 1rem; display: flex; gap: 0.5rem; align-items: flex-end; flex-wrap: wrap;">
+        <div style="flex: 1; min-width: 220px;">
+          <label class="form-label" style="margin-bottom: 4px; font-size: 0.8rem;">Enroll Student into this Class:</label>
+          <select id="modal-roster-add-select" class="form-select"></select>
+        </div>
+        <button id="modal-roster-btn-add" class="btn btn-primary btn-sm" style="height: 38px;">
+          <span>+</span> Add to Class Roster
+        </button>
+      </div>
+
+      <!-- Students Table -->
+      <div class="table-responsive" style="max-height: 360px; overflow-y: auto;">
+        <table>
+          <thead>
+            <tr>
+              <th style="width: 35px;">#</th>
+              <th>Photo</th>
+              <th>Roll Number</th>
+              <th>Student Name</th>
+              <th>Department</th>
+              <th>Attendance</th>
+              <th style="text-align: right;">Action</th>
+            </tr>
+          </thead>
+          <tbody id="modal-roster-tbody"></tbody>
+        </table>
+      </div>
+
+      <div style="display: flex; justify-content: flex-end; margin-top: 1.25rem;">
+        <button type="button" class="btn btn-outline btn-close-modal">Close</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal: Login Gateway (admin123 / admin123) -->
+  <div id="modal-login-gateway" class="modal-backdrop open" style="z-index: 1000; background: rgba(5, 8, 16, 0.88);">
+    <div class="modal-box" style="max-width: 500px; border-top: 4px solid var(--accent-blue);">
+      <div style="text-align: center; margin-bottom: 1.25rem;">
+        <div class="logo-badge" style="margin: 0 auto 0.75rem auto; width: 48px; height: 48px; font-size: 1.5rem;">P</div>
+        <h2 style="font-size: 1.35rem; font-weight: 800; color: #ffffff;">Presently Central Hub</h2>
+        <p style="font-size: 0.85rem; color: var(--text-muted); margin-top: 0.25rem;">Autonomous Attendance & Anti-Proxy Biometric Hub</p>
+      </div>
+
+      <div id="login-error-msg" style="display: none; background: rgba(244, 63, 94, 0.15); border: 1px solid var(--accent-rose); color: #fca5a5; padding: 0.6rem; border-radius: 8px; font-size: 0.8rem; margin-bottom: 1rem;"></div>
+
+      <form id="form-login">
+        <div class="form-group">
+          <label class="form-label">Select Access Role</label>
+          <select id="login-role-select" class="form-select">
+            <option value="FACULTY">Faculty Member</option>
+            <option value="ADMIN">System Administrator</option>
+            <option value="NODE">📹 Classroom Camera Node</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input id="login-username-input" type="text" class="form-input" required autocomplete="username" placeholder="Username (e.g. F1, admin123, 123)">
+          <small style="color: var(--text-muted); font-size: 0.73rem; margin-top: 0.2rem; display: block;">
+            Teachers log in with sequential IDs: <strong style="color: #a5b4fc;">F1, F2, F3...</strong>
+          </small>
+        </div>
+
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input id="login-password-input" type="password" class="form-input" required autocomplete="current-password" placeholder="Enter password (default: 123)">
+        </div>
+
+        <button type="submit" id="btn-login-submit" class="btn btn-primary" style="width: 100%; margin-top: 0.5rem; height: 42px;">
+          <span>🔓</span> Log In
+        </button>
+      </form>
+
+      <div style="margin-top: 1rem; padding-top: 0.85rem; border-top: 1px solid var(--border-color); display: flex; flex-direction: column; gap: 0.4rem;">
+        <div style="display: flex; gap: 0.5rem;">
+          <button type="button" id="btn-quick-login-faculty" class="btn btn-outline btn-sm" style="flex: 1; border-color: #6366f1; color: #a5b4fc; font-weight: 700; background: rgba(99, 102, 241, 0.08);">
+            <span>👨‍🏫</span> Faculty (F1)
+          </button>
+          <button type="button" id="btn-quick-login-admin" class="btn btn-outline btn-sm" style="flex: 1; border-color: #3b82f6; color: #93c5fd; font-weight: 700; background: rgba(59, 130, 246, 0.08);">
+            <span>🛡️</span> Admin
+          </button>
+        </div>
+        <button type="button" id="btn-quick-login-camera" class="btn btn-outline btn-sm" style="width: 100%; border-color: #10b981; color: #6ee7b7; font-weight: 700; background: rgba(16, 185, 129, 0.08);">
+          <span>📹</span> Quick Login as Camera Node
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <footer>
+    <div class="footer-content">
+      <div>
+        <strong>Presently: Attendance That Takes Itself</strong> • Enterprise Anti-Proxy Biometric System
+      </div>
+      <div>
+        <span>Privacy Certified</span> • <span>72h Snapshot Retention</span> • <span>LMS Webhook Ready</span>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="/js/face-engine.js"></script>
+  <script src="/js/kiosk.js"></script>
+  <script src="/js/faculty.js"></script>
+  <script src="/js/admin.js"></script>
+  <script src="/js/lms-demo.js"></script>
+  <script src="/js/auth-ui.js"></script>
+  <script src="/js/app.js"></script>
+</body>
+</html>
+<!-- Presently Biometric Attendance System -->

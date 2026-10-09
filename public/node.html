@@ -1,0 +1,226 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Presently : Attendance Camera Node</title>
+  <link rel="stylesheet" href="/css/style.css">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📹</text></svg>">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; overflow: hidden; background: #070a11; font-family: system-ui, -apple-system, sans-serif; }
+
+    /* ── Login Gate ── */
+    #node-login-gate {
+      position: fixed; inset: 0; z-index: 100;
+      background: rgba(5, 8, 16, 0.96);
+      display: flex; align-items: center; justify-content: center;
+    }
+    .login-card {
+      background: #111827; border: 1px solid #1e293b; border-top: 4px solid #3b82f6;
+      border-radius: 14px; padding: 2rem 2.25rem; width: 90%; max-width: 420px;
+      text-align: center;
+    }
+    .login-card h2 { color: #fff; font-size: 1.35rem; font-weight: 800; margin-bottom: 0.3rem; }
+    .login-card p  { color: #94a3b8; font-size: 0.82rem; margin-bottom: 1.25rem; }
+    .login-card .form-group { text-align: left; margin-bottom: 0.85rem; }
+    .login-card .form-label { color: #94a3b8; font-size: 0.78rem; font-weight: 600; display: block; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .login-card .form-input {
+      width: 100%; padding: 0.6rem 0.8rem; background: #0f172a; border: 1px solid #1e293b;
+      border-radius: 8px; color: #e2e8f0; font-size: 0.9rem; outline: none;
+    }
+    .login-card .form-input:focus { border-color: #3b82f6; }
+    .login-card .btn-login {
+      width: 100%; padding: 0.7rem; background: linear-gradient(135deg, #3b82f6, #6366f1);
+      color: #fff; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 700;
+      cursor: pointer; margin-top: 0.5rem;
+    }
+    .login-card .btn-login:hover { opacity: 0.92; }
+    .login-card .login-error {
+      display: none; background: rgba(244, 63, 94, 0.15); border: 1px solid #f43f5e;
+      color: #fca5a5; padding: 0.5rem; border-radius: 8px; font-size: 0.8rem; margin-bottom: 0.75rem;
+    }
+    .login-logo { width: 48px; height: 48px; border-radius: 12px; background: linear-gradient(135deg, #3b82f6, #6366f1); display: flex; align-items: center; justify-content: center; font-size: 1.5rem; font-weight: 900; color: #fff; margin: 0 auto 1rem auto; }
+
+    /* ── Setup Screen (class selector) ── */
+    #node-setup-screen {
+      position: fixed; inset: 0; z-index: 90;
+      background: rgba(5, 8, 16, 0.96);
+      display: none; align-items: center; justify-content: center;
+    }
+    .setup-card {
+      background: #111827; border: 1px solid #1e293b; border-top: 4px solid #10b981;
+      border-radius: 14px; padding: 2rem 2.25rem; width: 90%; max-width: 480px;
+    }
+    .setup-card h2 { color: #fff; font-size: 1.25rem; font-weight: 800; margin-bottom: 0.3rem; text-align: center; }
+    .setup-card p  { color: #94a3b8; font-size: 0.82rem; margin-bottom: 1.25rem; text-align: center; }
+    .setup-card .form-group { margin-bottom: 1rem; }
+    .setup-card .form-label { color: #94a3b8; font-size: 0.78rem; font-weight: 600; display: block; margin-bottom: 0.25rem; text-transform: uppercase; letter-spacing: 0.03em; }
+    .setup-card .form-select {
+      width: 100%; padding: 0.65rem 0.8rem; background: #0f172a; border: 1px solid #1e293b;
+      border-radius: 8px; color: #e2e8f0; font-size: 0.9rem; outline: none;
+    }
+    .setup-card .form-select:focus { border-color: #10b981; }
+    .setup-card .btn-start {
+      width: 100%; padding: 0.7rem; background: linear-gradient(135deg, #059669, #10b981);
+      color: #fff; border: none; border-radius: 8px; font-size: 0.95rem; font-weight: 700;
+      cursor: pointer; margin-top: 0.5rem;
+    }
+    .setup-card .btn-start:hover { opacity: 0.92; }
+    .setup-user-info { display: flex; align-items: center; gap: 0.6rem; background: rgba(16,185,129,0.08); border: 1px solid rgba(16,185,129,0.25); border-radius: 8px; padding: 0.6rem 0.85rem; margin-bottom: 1rem; }
+    .setup-user-info .dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; }
+    .setup-user-info span { color: #6ee7b7; font-size: 0.82rem; font-weight: 600; }
+
+    /* ── Main Camera View (fullscreen) ── */
+    #node-camera-view {
+      position: fixed; inset: 0; z-index: 10;
+      background: #000; display: none;
+    }
+    #node-camera-view video { display: none; }
+    #node-camera-view canvas {
+      width: 100%; height: 100%; object-fit: cover; display: block;
+    }
+
+    /* ── Challenge Overlay ── */
+    #node-challenge-overlay {
+      position: fixed; top: 0; left: 0; right: 0; z-index: 30;
+      display: none; padding: 1.25rem; pointer-events: none;
+    }
+    .challenge-card {
+      max-width: 500px; margin: 0 auto;
+      background: rgba(15, 23, 42, 0.92); border: 2px solid #f59e0b;
+      border-radius: 12px; padding: 1rem 1.5rem; text-align: center;
+      backdrop-filter: blur(12px);
+    }
+    .challenge-card .ch-title { color: #fbbf24; font-size: 0.75rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.3rem; }
+    .challenge-card .ch-action { color: #ffffff; font-size: 1.35rem; font-weight: 800; margin-bottom: 0.6rem; }
+    .challenge-card .ch-bar-wrap { height: 6px; background: rgba(255,255,255,0.1); border-radius: 4px; overflow: hidden; }
+    .challenge-card .ch-bar-fill { height: 100%; background: linear-gradient(90deg, #f59e0b, #ef4444); border-radius: 4px; transition: width 0.1s linear; width: 100%; }
+
+    /* ── Status Badge (top-left) ── */
+    #node-status-badge {
+      position: fixed; top: 12px; left: 12px; z-index: 35;
+      display: none; align-items: center; gap: 0.5rem;
+      background: rgba(15, 23, 42, 0.85); border: 1px solid rgba(59,130,246,0.3);
+      border-radius: 10px; padding: 0.45rem 0.8rem; backdrop-filter: blur(8px);
+    }
+    #node-status-badge .s-dot { width: 8px; height: 8px; border-radius: 50%; background: #10b981; animation: pulse 1.5s infinite; }
+    #node-status-badge .s-text { color: #94a3b8; font-size: 0.72rem; font-weight: 600; }
+    #node-status-badge .s-class { color: #e2e8f0; font-size: 0.72rem; font-weight: 700; }
+    @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    /* ── Result Toast (bottom center) ── */
+    #node-result-toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); z-index: 40;
+      display: none; min-width: 300px; max-width: 520px;
+      border-radius: 12px; padding: 0.85rem 1.25rem;
+      backdrop-filter: blur(12px); text-align: center;
+      animation: slideUp 0.3s ease-out;
+    }
+    #node-result-toast.success { background: rgba(16,185,129,0.88); border: 1px solid #34d399; color: #fff; }
+    #node-result-toast.warning { background: rgba(245,158,11,0.88); border: 1px solid #fbbf24; color: #fff; }
+    #node-result-toast.danger  { background: rgba(239,68,68,0.88); border: 1px solid #f87171; color: #fff; }
+    #node-result-toast .toast-title { font-size: 1rem; font-weight: 800; }
+    #node-result-toast .toast-sub   { font-size: 0.78rem; opacity: 0.9; margin-top: 2px; }
+    @keyframes slideUp { from { transform: translateX(-50%) translateY(30px); opacity: 0; } to { transform: translateX(-50%) translateY(0); opacity: 1; } }
+
+    /* ── Logout button (top-right) ── */
+    #node-logout-btn {
+      position: fixed; top: 12px; right: 12px; z-index: 35;
+      display: none; background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.4);
+      color: #fca5a5; font-size: 0.72rem; font-weight: 600; padding: 0.35rem 0.7rem;
+      border-radius: 8px; cursor: pointer; backdrop-filter: blur(8px);
+    }
+    #node-logout-btn:hover { background: rgba(239,68,68,0.3); }
+  </style>
+</head>
+<body>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- LOGIN GATE                                   -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div id="node-login-gate">
+    <div class="login-card">
+      <div class="login-logo">P</div>
+      <h2>Presently Camera Node</h2>
+      <p>Sign in to activate the attendance camera for your classroom</p>
+
+      <div id="node-login-error" class="login-error"></div>
+
+      <form id="node-login-form">
+        <div class="form-group">
+          <label class="form-label">Username</label>
+          <input id="node-login-user" type="text" class="form-input" required autocomplete="username" placeholder="Enter username">
+        </div>
+        <div class="form-group">
+          <label class="form-label">Password</label>
+          <input id="node-login-pass" type="password" class="form-input" required autocomplete="current-password" placeholder="Enter password">
+        </div>
+        <button type="submit" class="btn-login">🔓 Sign In</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- SETUP: SELECT CLASS                          -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div id="node-setup-screen">
+    <div class="setup-card">
+      <h2>📹 Camera Node Setup</h2>
+      <p>Choose the class this camera will capture attendance for</p>
+
+      <div class="setup-user-info">
+        <div class="dot"></div>
+        <span id="setup-user-label">Signed in as: —</span>
+      </div>
+
+      <div class="form-group">
+        <label class="form-label">Select Class / Section</label>
+        <select id="setup-class-select" class="form-select">
+          <option value="">Loading classes…</option>
+        </select>
+      </div>
+
+      <button id="setup-start-btn" class="btn-start">▶ Start Attendance Camera</button>
+    </div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════ -->
+  <!-- MAIN CAMERA VIEW (fullscreen, no controls)  -->
+  <!-- ═══════════════════════════════════════════ -->
+  <div id="node-camera-view">
+    <video id="node-video" autoplay playsinline muted></video>
+    <canvas id="node-canvas" width="640" height="480"></canvas>
+  </div>
+
+  <!-- Status badge (top-left) -->
+  <div id="node-status-badge">
+    <div class="s-dot"></div>
+    <span class="s-class" id="node-class-label">—</span>
+    <span class="s-text">• LIVE</span>
+  </div>
+
+  <!-- Logout button (top-right) -->
+  <button id="node-logout-btn">⏻ Logout</button>
+
+  <!-- Challenge overlay (top center) -->
+  <div id="node-challenge-overlay">
+    <div class="challenge-card">
+      <div class="ch-title">🛡️ Anti-Proxy Liveness Check</div>
+      <div class="ch-action" id="node-ch-action">—</div>
+      <div class="ch-bar-wrap"><div class="ch-bar-fill" id="node-ch-bar"></div></div>
+    </div>
+  </div>
+
+  <!-- Result toast (bottom center) -->
+  <div id="node-result-toast">
+    <div class="toast-title" id="node-toast-title">—</div>
+    <div class="toast-sub" id="node-toast-sub">—</div>
+  </div>
+
+  <!-- Scripts -->
+  <script src="/js/face-engine.js"></script>
+  <script src="/js/edge-node.js"></script>
+</body>
+</html>
+<!-- Presently Biometric Attendance System -->
