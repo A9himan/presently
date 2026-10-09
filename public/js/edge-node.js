@@ -592,11 +592,12 @@ function extractEmbeddingFromCurrentFrame() {
 
 function captureNodeSnapshot() {
   try {
+    if (!videoEl || videoEl.videoWidth === 0) return null;
     const temp = document.createElement('canvas');
-    temp.width = 320;
-    temp.height = 240;
-    temp.getContext('2d').drawImage(videoEl, 0, 0, 320, 240);
-    return temp.toDataURL('image/jpeg', 0.7);
+    temp.width = videoEl.videoWidth;
+    temp.height = videoEl.videoHeight;
+    temp.getContext('2d').drawImage(videoEl, 0, 0, temp.width, temp.height);
+    return temp.toDataURL('image/jpeg', 0.95);
   } catch {
     return null;
   }

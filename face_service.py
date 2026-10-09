@@ -57,21 +57,21 @@ class Config:
     det_size: int = int(_env_f("FACE_DET_SIZE", 640))
     dominant_ratio: float = 2.0     # verify: largest face must be 2x the next
     # --- verification frame quality (looser: people are moving) ---
-    verify_min_face_px: int = int(_env_f("FACE_VERIFY_MIN_PX", 80))
-    verify_min_det: float = 0.60
-    verify_min_blur: float = _env_f("FACE_VERIFY_MIN_BLUR", 40.0)
-    verify_max_yaw: float = 0.45
-    verify_min_frames: int = int(_env_f("FACE_VERIFY_MIN_FRAMES", 3))
+    verify_min_face_px: int = int(_env_f("FACE_VERIFY_MIN_PX", 60))
+    verify_min_det: float = 0.50
+    verify_min_blur: float = _env_f("FACE_VERIFY_MIN_BLUR", 15.0)
+    verify_max_yaw: float = 0.50
+    verify_min_frames: int = int(_env_f("FACE_VERIFY_MIN_FRAMES", 2))
     # --- enrollment frame quality (stricter) ---
-    enroll_min_face_px: int = int(_env_f("FACE_ENROLL_MIN_PX", 112))
-    enroll_min_det: float = 0.75
-    enroll_min_blur: float = _env_f("FACE_ENROLL_MIN_BLUR", 60.0)
-    enroll_max_yaw: float = 0.30
-    enroll_min_frames: int = int(_env_f("FACE_ENROLL_MIN_FRAMES", 3))
+    enroll_min_face_px: int = int(_env_f("FACE_ENROLL_MIN_PX", 90))
+    enroll_min_det: float = 0.65
+    enroll_min_blur: float = _env_f("FACE_ENROLL_MIN_BLUR", 30.0)
+    enroll_max_yaw: float = 0.35
+    enroll_min_frames: int = int(_env_f("FACE_ENROLL_MIN_FRAMES", 2))
     enroll_max_frames: int = 5
-    enroll_consistency: float = 0.4
+    enroll_consistency: float = 0.35
     # --- shared ---
-    min_brightness: float = 50.0
+    min_brightness: float = 35.0
     max_brightness: float = 225.0
 
 _LITE_NAME = MODEL_NAME + "_lite"

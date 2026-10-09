@@ -1356,7 +1356,15 @@ def api_face_match():
     body = request.get_json(force=True) or {}
     embedding = body.get('embedding')
     class_id = body.get('class_id')
+    raw_frames = body.get("frames", [])
     snapshot_b64 = body.get('snapshotBase64') or body.get('snapshot_data') or body.get('photoData') or body.get('image')
+    
+    if isinstance(raw_frames, list) and raw_frames:
+        frames = raw_frames[:15]
+    elif snapshot_b64:
+        frames = [snapshot_b64]
+    else:
+        frames = []
     
     if class_id:
         enrollments = ClassEnrollment.query.filter_by(class_id=class_id).all()
@@ -1366,7 +1374,7 @@ def api_face_match():
         students = Student.query.all()
 
     # 1. Matching via frame snapshot using FaceService
-    if snapshot_b64 and not embedding:
+    if frames and not embedding:
         svc = get_service()
         gallery = {}
         for s in students:
@@ -1381,7 +1389,7 @@ def api_face_match():
                 except Exception:
                     pass
 
-        m = svc.identify([snapshot_b64], gallery)
+        m = svc.identify(frames, gallery)
         if m.decision == "ACCEPT" and m.student_id:
             best_stu = next((s for s in students if s.id == m.student_id), None)
             if best_stu:

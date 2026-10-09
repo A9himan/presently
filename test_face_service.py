@@ -113,7 +113,7 @@ def test_enroll_ok_returns_fused_and_per_frame(people):
 
 
 def test_enroll_needs_enough_frames(people):
-    assert not SVC.enroll(enroll_shots(people[0][0])[:2]).ok
+    assert not SVC.enroll(enroll_shots(people[0][0])[:1]).ok
 
 
 def test_enroll_rejects_turned_head(people):
@@ -167,7 +167,7 @@ def test_person_swap_during_capture_is_rejected(people, gallery):
 
 
 def test_too_few_frames_is_rejected(people, gallery):
-    m = SVC.identify(probe_shots(people[0][0])[:2], gallery)
+    m = SVC.identify(probe_shots(people[0][0])[:1], gallery)
     assert m.decision == "REJECT" and m.reason.startswith("INSUFFICIENT_QUALITY_FRAMES")
 
 

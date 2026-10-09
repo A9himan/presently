@@ -644,7 +644,7 @@ function initStudentPhotoUpload() {
         offCtx.drawImage(img, 0, 0, finalW, finalH);
         
         // Save clean image for backend to run ArcFace on
-        uploadedStudentPhotoData = offCanvas.toDataURL('image/jpeg', 0.90);
+        uploadedStudentPhotoData = offCanvas.toDataURL('image/jpeg', 0.95);
         
         // Remove old 128-d frontend vector logic as we use backend 512-d ArcFace
         uploadedStudentEmbedding = null;

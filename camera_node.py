@@ -176,17 +176,20 @@ def get_class_students(hub_url, class_id):
     return []
 
 
-def match_face(hub_url, embedding=None, class_id=None, frame=None):
+def match_face(hub_url, embedding=None, class_id=None, frames=None):
     try:
         payload = {}
         if embedding:
             payload["embedding"] = embedding
         if class_id:
             payload["class_id"] = class_id
-        if frame is not None:
-            _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-            b64_image = base64.b64encode(buffer).decode("utf-8")
-            payload["snapshotBase64"] = f"data:image/jpeg;base64,{b64_image}"
+        if frames:
+            encoded_frames = []
+            for f in frames:
+                _, buffer = cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, 95])
+                b64_image = base64.b64encode(buffer).decode("utf-8")
+                encoded_frames.append(f"data:image/jpeg;base64,{b64_image}")
+            payload["frames"] = encoded_frames
 
         response = requests.post(f"{hub_url}/api/face/match", json=payload, timeout=4)
         if response.status_code == 200:
@@ -196,28 +199,19 @@ def match_face(hub_url, embedding=None, class_id=None, frame=None):
     return None
 
 
-def mark_attendance(hub_url, session_id, student_id, class_id, challenge_type, camera_id, frame, yaw_delta=None):
-    _, buffer = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
-    b64_image = base64.b64encode(buffer).decode("utf-8")
-    data_uri = f"data:image/jpeg;base64,{b64_image}"
-
+def mark_attendance(hub_url, session_id, student_id, class_id, challenge_type, camera_id, frames, yaw_delta=None):
     if yaw_delta is None:
         yaw_delta = 20 if challenge_type == "TURN_RIGHT" else (-20 if challenge_type == "TURN_LEFT" else 0)
 
     payload = {
         "sessionId": session_id,
         "student_id": student_id,
-        "forceStudentId": student_id,
         "class_id": class_id,
         "actionCompleted": challenge_type,
         "challenge_type": challenge_type,
         "liveness_score": 0.98,
-        "match_confidence": 0.96,
         "camera_id": camera_id,
         "cameraId": camera_id,
-        "snapshotBase64": data_uri,
-        "snapshot_data": data_uri,
-        "frames": [data_uri, data_uri, data_uri],
         "telemetry": {
             "yawAngleDelta": int(yaw_delta),
             "blinkCount": 1 if challenge_type == "BLINK" else 0,
@@ -225,6 +219,14 @@ def mark_attendance(hub_url, session_id, student_id, class_id, challenge_type, c
             "isStaticImageDetected": False
         }
     }
+    
+    if frames:
+        encoded_frames = []
+        for f in frames:
+            _, buffer = cv2.imencode(".jpg", f, [cv2.IMWRITE_JPEG_QUALITY, 95])
+            b64_image = base64.b64encode(buffer).decode("utf-8")
+            encoded_frames.append(f"data:image/jpeg;base64,{b64_image}")
+        payload["frames"] = encoded_frames
 
     try:
         response = requests.post(f"{hub_url}/api/attendance/verify-and-mark", json=payload, timeout=6)
@@ -271,6 +273,7 @@ def main():
     action_hold_frames = 0
     eye_closed_seen = False
     progress = 0.0
+    recent_frames = []
 
     print("=========================================================")
     print("  PRESENTLY CAMERA NODE (InsightFace + Anti-Proxy CV)")
@@ -327,7 +330,7 @@ def main():
                     raw_yaw = float(face.pose[1])
                 if hasattr(face, "landmark_3d_68") and face.landmark_3d_68 is not None:
                     ear = compute_ear_68(face.landmark_3d_68)
-                face_embedding = compute_face_embedding(face, frame)
+
         elif mp_face_mesh is not None:
             rgb_frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
             results = mp_face_mesh.process(rgb_frame)
@@ -354,13 +357,17 @@ def main():
                 y_min = min([lm.y for lm in fl.landmark])
                 y_max = max([lm.y for lm in fl.landmark])
                 face_bbox = [int(x_min * w), int(y_min * h), int(x_max * w), int(y_max * h)]
-                face_embedding = compute_face_embedding(frame=frame)
+
 
         # -------------------------------------------------------------
         # 2. Neutral Baseline Calibration & Relative Head Turn
         # -------------------------------------------------------------
         relative_yaw = 0.0
         if face_detected and not challenge_passed:
+            recent_frames.append(frame.copy())
+            if len(recent_frames) > 5:
+                recent_frames.pop(0)
+
             if baseline_yaw is None:
                 baseline_samples.append((raw_yaw, ear))
                 if len(baseline_samples) >= 5:
@@ -418,7 +425,7 @@ def main():
                     print(f"✅ {status_message} (Relative Yaw: {relative_yaw:+.1f}°, Smoothed: {smoothed_yaw:+.1f}°)")
 
                     # Identify & mark attendance
-                    if not face_embedding:
+                    if not recent_frames:
                         print("❌ Extraction Failed: Real embedding extraction failed locally. Aborting attempt.")
                         challenge_passed = False
                         progress = 0.0
@@ -434,7 +441,7 @@ def main():
                         enrolled_students = get_class_students(args.hub, active_session.get("class_id"))
 
                     print(f"📡 Sending recognition request for extracted embedding... (Active class: {active_session.get('class_id') if active_session else 'None'})")
-                    matched_data = match_face(args.hub, face_embedding, active_session.get("class_id") if active_session else None, frame)
+                    matched_data = match_face(args.hub, None, active_session.get("class_id") if active_session else None, recent_frames)
                     student = None
                     if matched_data and matched_data.get("student"):
                         student = matched_data.get("student")
@@ -455,7 +462,7 @@ def main():
                             active_session.get("class_id"),
                             current_challenge,
                             args.camera_id,
-                            frame,
+                            recent_frames,
                             yaw_delta=smoothed_yaw
                         )
                         if success:
