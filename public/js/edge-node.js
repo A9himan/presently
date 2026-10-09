@@ -605,7 +605,7 @@ function handleResult(result) {
       result.message || 'You have already been marked present for this subject.'
     );
     faceEngine.playWarningBeep();
-  } else if (result.code === 'UNKNOWN_FACE') {
+  } else if (result.code === 'UNKNOWN_FACE' || (result.decision === 'REJECT' && result.reason === 'UNKNOWN_FACE') || (result.decision === 'REJECT' && result.reason.startsWith('INSUFFICIENT_QUALITY'))) {
     showToast('danger',
       `❌ Face Not Recognized`,
       'Your face was not found in the enrolled students for this class.'

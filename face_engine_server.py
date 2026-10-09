@@ -95,6 +95,7 @@ class FaceEngine:
         self._app = None
         self._loaded = False
         self._load_lock = threading.Lock()
+        self._inference_lock = threading.Lock()
         logger.info("FaceEngine created (model=%s, lazy-load)", model_name)
 
     # ------------------------------------------------------------------
@@ -179,7 +180,8 @@ class FaceEngine:
             raise InvalidFrame("Frame is None or empty")
 
         try:
-            return self._app.get(frame)
+            with self._inference_lock:
+                return self._app.get(frame)
         except Exception as e:
             raise FaceEngineError(f"Face detection failed: {e}") from e
 
