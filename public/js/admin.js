@@ -627,12 +627,30 @@ function initStudentPhotoUpload() {
         ctx.moveTo(106, 120); ctx.lineTo(120, 120); ctx.lineTo(120, 106);
         ctx.stroke();
 
-        // Extract 128-d vector embedding from image
-        uploadedStudentEmbedding = window.presentlyFaceEngine.extractEmbeddingFromImage(img);
-        uploadedStudentPhotoData = canvas.toDataURL('image/jpeg', 0.85);
+        // Extract clean high-res image for backend ArcFace embedding
+        const maxDim = 800;
+        let finalW = img.width;
+        let finalH = img.height;
+        if (finalW > maxDim || finalH > maxDim) {
+          const ratio = Math.min(maxDim / finalW, maxDim / finalH);
+          finalW = Math.round(finalW * ratio);
+          finalH = Math.round(finalH * ratio);
+        }
+        
+        const offCanvas = document.createElement('canvas');
+        offCanvas.width = finalW;
+        offCanvas.height = finalH;
+        const offCtx = offCanvas.getContext('2d');
+        offCtx.drawImage(img, 0, 0, finalW, finalH);
+        
+        // Save clean image for backend to run ArcFace on
+        uploadedStudentPhotoData = offCanvas.toDataURL('image/jpeg', 0.90);
+        
+        // Remove old 128-d frontend vector logic as we use backend 512-d ArcFace
+        uploadedStudentEmbedding = null;
 
         if (previewWrap) previewWrap.style.display = 'block';
-        if (statusEl) statusEl.textContent = '✅ Face Recognized • 128-d Vector Extracted';
+        if (statusEl) statusEl.textContent = '✅ Photo Selected • Ready for Server-Side Extraction';
       };
       img.src = event.target.result;
     };
