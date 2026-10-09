@@ -374,10 +374,12 @@ async function runRecognitionCycle() {
   isVerifying = true;
 
   try {
+    console.log(`[${new Date().toISOString()}] initializing`);
     // 1. Request a random challenge from the server
     const chRes = await fetch(`/api/challenge/new?sessionId=${nodeActiveSessionId}`);
     nodeCurrentChallenge = await chRes.json();
 
+    console.log(`[${new Date().toISOString()}] liveness_pending`);
     // 2. Show challenge overlay to student
     showChallenge(nodeCurrentChallenge);
 
@@ -386,6 +388,7 @@ async function runRecognitionCycle() {
 
     // If liveness challenge timed out or was not passed, do not submit failed mark
     if (!livenessResult.passed) {
+      console.log(`[${new Date().toISOString()}] liveness_failed`);
       hideChallenge();
       showToast('warning', '⏱️ Liveness Timed Out', 'Head turn was not completed. Recalibrating camera...');
       nodeCurrentChallenge = null;
@@ -393,6 +396,9 @@ async function runRecognitionCycle() {
       scheduleNextCycle();
       return;
     }
+    
+    console.log(`[${new Date().toISOString()}] LIVENESS_PASSED`);
+    console.log(`[${new Date().toISOString()}] liveness_passed`);
 
     // 4. Capture snapshot frame from current webcam feed
     const snapshot = captureNodeSnapshot();
@@ -408,18 +414,44 @@ async function runRecognitionCycle() {
       frames: [snapshot, snapshot, snapshot]
     };
 
+    console.log(`[${new Date().toISOString()}] RECOGNITION_STARTED`);
+    console.log(`[${new Date().toISOString()}] recognition_pending`);
+    console.log(`[${new Date().toISOString()}] ATTENDANCE_REQUEST_SENT`);
+    console.log(`[${new Date().toISOString()}] attendance_pending`);
+    
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000); // 10 second timeout
+
     const res = await fetch('/api/attendance/verify-and-mark', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload)
+      body: JSON.stringify(payload),
+      signal: controller.signal
     });
+    
+    clearTimeout(timeoutId);
+    console.log(`[${new Date().toISOString()}] ATTENDANCE_RESPONSE_RECEIVED`);
+
     const result = await res.json();
+    console.log(`[${new Date().toISOString()}] RECOGNITION_COMPLETED`);
+
+    if (result.code === 'MARKED_SUCCESSFULLY' || result.success) {
+      console.log(`[${new Date().toISOString()}] DATABASE_COMMIT_SUCCESS`);
+      console.log(`[${new Date().toISOString()}] SUCCESS_POPUP_SHOWN`);
+      console.log(`[${new Date().toISOString()}] completed`);
+    }
 
     hideChallenge();
     handleResult(result);
 
   } catch (err) {
-    console.error('Recognition cycle error:', err);
+    if (err.name === 'AbortError') {
+      console.error(`[${new Date().toISOString()}] Timeout waiting for server response`);
+      showToast('danger', '⚠️ Timeout', 'Server took too long to respond. Please try again.');
+    } else {
+      console.error(`[${new Date().toISOString()}] Recognition cycle error:`, err);
+      showToast('danger', '⚠️ Error', 'Connection failed. Please try again.');
+    }
     hideChallenge();
   }
 
