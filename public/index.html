@@ -33,12 +33,8 @@
         <button class="tab-btn" data-tab="admin">
           <span>🏫</span> Admin Portal
         </button>
-        <button class="tab-btn" data-tab="cameras">
-          <span>📡</span> Camera Hub
-        </button>
-        <button class="tab-btn" data-tab="lms">
-          <span>⚡</span> LMS Webhook & API
-        </button>
+        
+        
       </nav>
 
       <div style="display: flex; align-items: center; gap: 0.75rem; flex-wrap: wrap;">
@@ -510,125 +506,12 @@
     <!-- ======================================================== -->
     <!-- VIEW 5: CENTRAL HUB & MULTI-ROOM CAMERA SCALE             -->
     <!-- ======================================================== -->
-    <section id="view-cameras" class="view-section">
-      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-        
-        <div class="card" style="background: linear-gradient(145deg, #111827, #1f293d);">
-          <div class="card-title" style="margin-bottom: 0.5rem;">
-            <span>📡</span> Central Hub Multi-Room Camera Architecture
-          </div>
-          <p style="font-size: 0.85rem; color: var(--text-muted); max-width: 900px;">
-            Presently scales across unlimited lecture halls and laboratories. Camera devices connect to this central hub via authenticated edge endpoints. Each terminal stream handles face landmark tracking, anti-proxy liveness challenges, and pushes attendance to the central database.
-          </p>
-        </div>
-
-        <div id="admin-cameras-grid" class="grid-4"></div>
-
-      </div>
-    </section>
+    
 
     <!-- ======================================================== -->
     <!-- VIEW 6: LMS WEBHOOK & REST API DISPATCHER                -->
     <!-- ======================================================== -->
-    <section id="view-lms" class="view-section">
-      <div style="display: flex; flex-direction: column; gap: 1.5rem;">
-        
-        <!-- LMS Configuration Card -->
-        <div class="card">
-          <div class="card-header">
-            <div>
-              <div class="card-title">
-                <span>⚡</span> LMS Webhook & REST API Integration
-              </div>
-              <div class="card-subtitle">Each attendance mark is pushed instantly to your LMS with HMAC-SHA256 signatures</div>
-            </div>
-            <button id="btn-lms-test-ping" class="btn btn-primary btn-sm">
-              <span>🚀</span> Send Test Webhook Ping
-            </button>
-          </div>
-
-          <form id="form-lms-config" style="display: grid; grid-template-columns: 1.5fr 1fr auto; gap: 1rem; align-items: end;">
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label">LMS Webhook Target URL (Canvas / Moodle / Custom)</label>
-              <input id="lms-config-url" type="text" class="form-input" placeholder="/api/mock-lms/webhook">
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label class="form-label">HMAC-SHA256 Signing Secret</label>
-              <input id="lms-config-secret" type="password" class="form-input" placeholder="Secret Key">
-            </div>
-            <button type="submit" class="btn btn-outline" style="height: 40px;">Save Settings</button>
-          </form>
-        </div>
-
-        <!-- Live LMS Ingestion Stream -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <span>📥</span> Live LMS Webhook Ingestion Feed
-            </div>
-            <button id="btn-refresh-lms-feed" class="btn btn-outline btn-sm">
-              <span>🔄</span> Refresh Feed
-            </button>
-          </div>
-
-          <div id="lms-feed-container"></div>
-        </div>
-
-        <!-- REST API Endpoints Specification -->
-        <div class="card">
-          <div class="card-header">
-            <div class="card-title">
-              <span>🔌</span> REST API Documentation & Endpoints
-            </div>
-          </div>
-          <div class="table-responsive">
-            <table>
-              <thead>
-                <tr>
-                  <th>Method</th>
-                  <th>Endpoint</th>
-                  <th>Description</th>
-                  <th>Payload / Query</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr>
-                  <td><span class="badge badge-green">POST</span></td>
-                  <td><code>/api/attendance/verify-and-mark</code></td>
-                  <td>Submit facial recognition & anti-proxy challenge response</td>
-                  <td><code>{ sessionId, cameraId, embedding, challengeId, actionCompleted }</code></td>
-                </tr>
-                <tr>
-                  <td><span class="badge badge-blue">GET</span></td>
-                  <td><code>/api/export/pdf?sessionId={id}</code></td>
-                  <td>Generate & download official A4 attendance PDF dossier</td>
-                  <td><code>sessionId</code></td>
-                </tr>
-                <tr>
-                  <td><span class="badge badge-blue">GET</span></td>
-                  <td><code>/api/challenge/new?sessionId={id}</code></td>
-                  <td>Request dynamic anti-proxy challenge token</td>
-                  <td><code>sessionId, action</code></td>
-                </tr>
-                <tr>
-                  <td><span class="badge badge-blue">GET</span></td>
-                  <td><code>/api/sessions/active</code></td>
-                  <td>Fetch currently active lecture session and live stats</td>
-                  <td><code>classId (optional)</code></td>
-                </tr>
-                <tr>
-                  <td><span class="badge badge-green">POST</span></td>
-                  <td><code>/api/students/enroll</code></td>
-                  <td>Privacy face enrollment (extracts 128-d vector, purges photo)</td>
-                  <td><code>{ roll_number, name, email, department }</code></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-      </div>
-    </section>
+    
 
   </main>
 
