@@ -1136,6 +1136,9 @@ def api_verify_and_mark():
             'message': 'No camera frames received for facial verification'
         }), 400
 
+    if len(frames) == 1:
+        frames = [frames[0], frames[0], frames[0]]
+
     gallery = {}
     for s in enrolled_students:
         if getattr(s, 'face_embeddings', None):
