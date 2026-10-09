@@ -878,65 +878,67 @@ def seed_database(force=False):
         created_by='Er. Gagandeep Kaur'
     ))
     
-    # 7. Seed 2 Pre-marked Attendance Records
-    expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=72)).isoformat()
-    mock_svg = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" fill="%231e293b"/></svg>'
-    
-    rec1 = AttendanceRecord(
-        id='rec_seed_01',
-        session_id=sess_id,
-        student_id='stu_01',
-        class_id='cls_cs101_a',
-        subject_id='sub_cs101',
-        subject_code='CS101',
-        subject_name='Introduction to Computer Science',
-        teacher_name='Er. Gagandeep Kaur',
-        marked_at=now,
-        verification_method='FACIAL_RECOGNITION_LIVENESS',
-        challenge_type='TURN_LEFT',
-        liveness_score=0.98,
-        match_confidence=0.97,
-        camera_id='CAM-ROOM-101',
-        snapshot_id='snap_seed_01',
-        status='PRESENT'
-    )
-    snap1 = Snapshot(
-        id='snap_seed_01',
-        record_id='rec_seed_01',
-        image_data=mock_svg,
-        captured_at=now,
-        expires_at=expires_at,
-        is_purged=0
-    )
-    
-    rec2 = AttendanceRecord(
-        id='rec_seed_02',
-        session_id=sess_id,
-        student_id='stu_02',
-        class_id='cls_cs101_a',
-        subject_id='sub_cs101',
-        subject_code='CS101',
-        subject_name='Introduction to Computer Science',
-        teacher_name='Er. Gagandeep Kaur',
-        marked_at=now,
-        verification_method='FACIAL_RECOGNITION_LIVENESS',
-        challenge_type='BLINK',
-        liveness_score=0.96,
-        match_confidence=0.94,
-        camera_id='CAM-ROOM-101',
-        snapshot_id='snap_seed_02',
-        status='PRESENT'
-    )
-    snap2 = Snapshot(
-        id='snap_seed_02',
-        record_id='rec_seed_02',
-        image_data=mock_svg,
-        captured_at=now,
-        expires_at=expires_at,
-        is_purged=0
-    )
-    
-    db.session.add_all([rec1, snap1, rec2, snap2])
+    # 7. Seed 2 Pre-marked Attendance Records (strictly when DEMO_MODE=1)
+    if DEMO_MODE:
+        expires_at = (datetime.datetime.now(datetime.timezone.utc) + datetime.timedelta(hours=72)).isoformat()
+        mock_svg = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="160" height="160"><rect width="160" height="160" fill="%231e293b"/></svg>'
+        
+        rec1 = AttendanceRecord(
+            id='rec_seed_01',
+            session_id=sess_id,
+            student_id='stu_01',
+            class_id='cls_cs101_a',
+            subject_id='sub_cs101',
+            subject_code='CS101',
+            subject_name='Introduction to Computer Science',
+            teacher_name='Er. Gagandeep Kaur',
+            marked_at=now,
+            verification_method='FACIAL_RECOGNITION_LIVENESS',
+            challenge_type='TURN_LEFT',
+            liveness_score=0.98,
+            match_confidence=0.97,
+            camera_id='CAM-ROOM-101',
+            snapshot_id='snap_seed_01',
+            status='PRESENT'
+        )
+        snap1 = Snapshot(
+            id='snap_seed_01',
+            record_id='rec_seed_01',
+            image_data=mock_svg,
+            captured_at=now,
+            expires_at=expires_at,
+            is_purged=0
+        )
+        
+        rec2 = AttendanceRecord(
+            id='rec_seed_02',
+            session_id=sess_id,
+            student_id='stu_02',
+            class_id='cls_cs101_a',
+            subject_id='sub_cs101',
+            subject_code='CS101',
+            subject_name='Introduction to Computer Science',
+            teacher_name='Er. Gagandeep Kaur',
+            marked_at=now,
+            verification_method='FACIAL_RECOGNITION_LIVENESS',
+            challenge_type='BLINK',
+            liveness_score=0.96,
+            match_confidence=0.94,
+            camera_id='CAM-ROOM-101',
+            snapshot_id='snap_seed_02',
+            status='PRESENT'
+        )
+        snap2 = Snapshot(
+            id='snap_seed_02',
+            record_id='rec_seed_02',
+            image_data=mock_svg,
+            captured_at=now,
+            expires_at=expires_at,
+            is_purged=0
+        )
+        
+        db.session.add_all([rec1, snap1, rec2, snap2])
+
     db.session.commit()
 
 # ==========================================
