@@ -130,13 +130,11 @@ def compute_face_embedding(face_obj=None, frame=None):
             norm = np.linalg.norm(emb)
             if norm > 0:
                 return (emb / norm).tolist()
-    except Exception:
+    except Exception as e:
+        logger.warning(f"Error extracting embedding locally: {e}")
         pass
 
-    # Deterministic fallback 512-d unit vector
-    np.random.seed(42)
-    v = np.random.randn(512).astype(np.float32)
-    return (v / np.linalg.norm(v)).tolist()
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -420,15 +418,31 @@ def main():
                     print(f"✅ {status_message} (Relative Yaw: {relative_yaw:+.1f}°, Smoothed: {smoothed_yaw:+.1f}°)")
 
                     # Identify & mark attendance
+                    if not face_embedding:
+                        print("❌ Extraction Failed: Real embedding extraction failed locally. Aborting attempt.")
+                        challenge_passed = False
+                        progress = 0.0
+                        status_message = "Error: Face extraction failed."
+                        
+                        # Reset for next attempt
+                        baseline_samples = []
+                        baseline_yaw = None
+                        smoothed_yaw = 0.0
+                        continue
+
                     if not enrolled_students and active_session:
                         enrolled_students = get_class_students(args.hub, active_session.get("class_id"))
 
+                    print(f"📡 Sending recognition request for extracted embedding... (Active class: {active_session.get('class_id') if active_session else 'None'})")
                     matched_data = match_face(args.hub, face_embedding, active_session.get("class_id") if active_session else None, frame)
                     student = None
                     if matched_data and matched_data.get("student"):
                         student = matched_data.get("student")
-                    elif enrolled_students:
-                        student = enrolled_students[0]
+                        print(f"✅ Match Success: {student.get('name')} (Score: {matched_data.get('confidence', 'N/A')}, Margin: {matched_data.get('details', {}).get('margin', 'N/A')})")
+                    else:
+                        print(f"❌ Match Failed: Server did not return a valid student match. " 
+                              f"Details: {matched_data.get('details', 'No face detected or matched.') if matched_data else 'No response from server.'}")
+                        print(f"Response data: {matched_data}")
 
                     if student and active_session:
                         active_student = student

@@ -1,5 +1,11 @@
 import os
 import sys
+
+# Inject local dependencies from py_env
+SITE_PACKAGES = os.path.join(os.path.dirname(os.path.abspath(__file__)), "py_env", "Lib", "site-packages")
+if os.path.isdir(SITE_PACKAGES) and SITE_PACKAGES not in sys.path:
+    sys.path.insert(0, SITE_PACKAGES)
+
 import json
 import uuid
 import time
@@ -1105,7 +1111,6 @@ def api_verify_and_mark():
     action_completed = body.get('actionCompleted') or body.get('challenge_type') or body.get('action_completed')
     telemetry = body.get('telemetry', {})
     snapshot_base64 = body.get('snapshotBase64') or body.get('snapshot_data')
-    force_student_id = body.get('forceStudentId') or body.get('student_id')
     
     # 1. Validate Session
     sess = AttendanceSession.query.get(session_id)
@@ -1182,28 +1187,13 @@ def api_verify_and_mark():
 
     demo_mode = os.environ.get("DEMO_MODE", "0") in ("1", "true", "True")
     if m.decision != "ACCEPT":
-        force_id = body.get("forceStudentId") or body.get("student_id")
-        if force_id:
-            demo_stu = next((s for s in enrolled_students if s.id == force_id), None)
-            if demo_stu:
-                matched_student = demo_stu
-                confidence = 0.96
-            else:
-                status = 202 if m.decision == "REVIEW" else 400
-                return jsonify({
-                    "success": False,
-                    "decision": m.decision,
-                    "reason": m.reason,
-                    "details": m.to_dict()
-                }), status
-        else:
-            status = 202 if m.decision == "REVIEW" else 400
-            return jsonify({
-                "success": False,
-                "decision": m.decision,
-                "reason": m.reason,
-                "details": m.to_dict()
-            }), status
+        status = 202 if m.decision == "REVIEW" else 400
+        return jsonify({
+            "success": False,
+            "decision": m.decision,
+            "reason": m.reason,
+            "details": m.to_dict()
+        }), status
     else:
         matched_student = next((s for s in enrolled_students if s.id == m.student_id), None)
         if not matched_student:
@@ -1391,7 +1381,7 @@ def api_face_match():
                 except Exception:
                     pass
 
-        m = svc.identify([snapshot_b64, snapshot_b64], gallery)
+        m = svc.identify([snapshot_b64], gallery)
         if m.decision == "ACCEPT" and m.student_id:
             best_stu = next((s for s in students if s.id == m.student_id), None)
             if best_stu:
@@ -1434,7 +1424,7 @@ def api_face_match():
         except Exception:
             continue
             
-    threshold = 0.72
+    threshold = 0.45
     is_match = best_sim >= threshold and best_stu is not None
     return jsonify({
         'isMatch': is_match,
